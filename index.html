@@ -22,6 +22,7 @@
   <div class="backdrop" aria-hidden="true">
     <video id="bg-video" class="backdrop__video" muted loop playsinline preload="none"></video>
     <canvas id="bg-canvas" class="backdrop__canvas"></canvas>
+    <div class="backdrop__trip"></div>
     <div class="backdrop__dim"></div>
     <div class="backdrop__grain"></div>
   </div>
@@ -101,6 +102,10 @@
     </footer>
   </main>
 
+  <!-- Party mode cats live here -->
+  <div class="cats" id="cats" aria-hidden="true"></div>
+  <p class="sr-only" id="party-status" aria-live="polite"></p>
+
   <!-- Boot log, bottom left -->
   <pre class="log" id="log" aria-hidden="true"></pre>
 
@@ -112,9 +117,13 @@
     </button>
     <span class="dock__eq" id="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
     <span class="dock__track" id="track-name"></span>
+    <button class="dock__btn dock__exit" id="party-exit" type="button" aria-label="Exit party mode" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="stroke" d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
   </div>
 
   <audio id="audio" src="assets/audio.mp3" loop preload="auto"></audio>
+  <audio id="party-audio" src="assets/party.mp3" loop preload="none"></audio>
 
   <noscript><style>.main{opacity:1;transform:none}.enter{display:none}</style></noscript>
   <script src="script.js" defer></script>

@@ -38,6 +38,8 @@ const LOG = [
   ["» resolving reez.cc", "ok"],
   ["» loading <span class=\"hl\">aimbot.dll</span>", "ok"],
   ["» bypassing boredom", "ok"],
+  ["» found <span class=\"hl\">oiia.exe</span>", "?"],
+  ["» type: oiia // tap pfp 5x", ""],
   ["» ready.", ""],
 ];
 
@@ -46,11 +48,12 @@ function renderLog(count, caret) {
     .map(([line, status]) => status ? `${line} <span class="ok">[${status}]</span>` : line)
     .join("\n") + (caret ? '<span class="caret"></span>' : "");
 }
+let logTimer = null;
 function playLog() {
   if (reduceMotion.matches) { renderLog(LOG.length, false); return; }
   let i = 0;
   renderLog(0, true);
-  const t = setInterval(() => {
+  const t = logTimer = setInterval(() => {
     renderLog(++i, true);
     if (i >= LOG.length) clearInterval(t);
   }, 450);
@@ -100,11 +103,12 @@ document.fonts?.ready.then(lockWidths);
 window.addEventListener("resize", lockWidths);
 
 
+let nameTarget = "reez";
 function scrambleName() {
   if (decoding) return;
   decoding = true;
-  decode(mainPart, "reez", 0);
-  decode(tldPart, ".cc", 120, () => { decoding = false; glitch(); });
+  decode(mainPart, nameTarget, 0);
+  decode(tldPart, ".cc", 120, () => { decoding = false; lockWidths(); glitch(); });
 }
 
 if (!reduceMotion.matches) {
@@ -133,8 +137,13 @@ let analyser = null, freq = null;
 const level = { bass: 0, avg: 0, kick: 0, lastKick: 0 };
 const eqBars = [...$("eq").children];
 
+const partyAudio = $("party-audio");
+partyAudio.volume = Math.min(1, CONFIG.volume * 1.3);
+const activeAudio = () => (party.on ? partyAudio : audio);
+
 function applyMute() {
   audio.muted = muted;
+  partyAudio.muted = muted;
   muteBtn.setAttribute("aria-pressed", String(muted));
 }
 
@@ -143,14 +152,15 @@ function initAnalyser() {
   if (analyser || !CONFIG.reactive || !location.protocol.startsWith("http")) return;
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
-    const src = ac.createMediaElementSource(audio);
     analyser = ac.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.55;
-    src.connect(analyser);
+    for (const el of [audio, partyAudio]) {
+      ac.createMediaElementSource(el).connect(analyser);
+      el.addEventListener("play", () => ac.resume());
+    }
     analyser.connect(ac.destination);
     freq = new Uint8Array(analyser.frequencyBinCount);
-    audio.addEventListener("play", () => ac.resume());
     ac.resume();
   } catch { analyser = null; }
 }
@@ -172,7 +182,7 @@ muteBtn.addEventListener("click", () => {
   muted = !muted;
   store.set("reez:muted", muted ? "1" : "0");
   applyMute();
-  if (!muted && audio.paused) audio.play().catch(() => {});
+  if (!muted && activeAudio().paused) activeAudio().play().catch(() => {});
 });
 
 // Optional background video: starts loading right away, fades in on enter
@@ -215,7 +225,9 @@ $("enter-btn").focus({ preventScroll: true, focusVisible: false });
 
 // Called every animation frame by the background
 function readAudio(t) {
-  if (!analyser || audio.paused || audio.muted) {
+  if (party.on) partyBeatClock(t);
+  const el = activeAudio();
+  if (!analyser || el.paused || el.muted) {
     level.bass *= 0.9; level.kick *= 0.9;
     for (const b of eqBars) b.style.transform = "scaleY(0.15)";
     return;
@@ -225,7 +237,7 @@ function readAudio(t) {
   const b = band(0, 2);
   level.avg += (b - level.avg) * 0.04;
   level.bass += (b - level.bass) * 0.35;
-  if (b - level.avg > 0.1 && t - level.lastKick > 280) {
+  if (!party.on && b - level.avg > 0.1 && t - level.lastKick > 280) {
     level.lastKick = t;
     level.kick = 1;
     ripples.push({ x: w / 2, y: h / 2, r: 0, soft: true });
@@ -358,6 +370,7 @@ function drawStatic() {
 
 function frame(t) {
   readAudio(t);
+  partyFrame(t);
   const R = RADIUS * (1 + 0.35 * level.bass);
   // Wander when the pointer is idle (touch devices, or mouse left the window)
   if (!pointer.active || t - pointer.lastMove > 4000) {
@@ -413,6 +426,13 @@ function frame(t) {
     const tw = 0.13 + 0.06 * Math.sin(t / 900 + d.seed * 40) + 0.1 * level.kick;
     const a = Math.min(1, tw + d.glow * 0.85);
     const size = 1.4 + d.glow * 1.6;
+    if (party.on) {
+      const hue = (party.hue + d.ox * 0.25 + d.oy * 0.15 + d.glow * 90) % 360;
+      const ps = size + 1.2 + level.kick * 1.6;
+      ctx.fillStyle = `hsla(${hue | 0}, 100%, ${62 + d.glow * 18}%, ${Math.min(1, a + 0.35)})`;
+      ctx.fillRect(d.x - ps / 2, d.y - ps / 2, ps, ps);
+      continue;
+    }
     ctx.fillStyle = d.glow > 0.05
       ? `rgba(${(183 - 90 * d.glow) | 0}, ${(166 + 60 * d.glow) | 0}, 255, ${a})`
       : `rgba(210, 200, 255, ${a})`;
@@ -422,7 +442,9 @@ function frame(t) {
   // thin lines from the cursor to the closest lit dots
   ctx.lineWidth = 0.6;
   for (const d of near) {
-    ctx.strokeStyle = `rgba(94, 231, 255, ${0.35 * d.glow})`;
+    ctx.strokeStyle = party.on
+      ? `hsla(${(party.hue + d.ox * 0.5) % 360 | 0}, 100%, 65%, ${0.6 * d.glow})`
+      : `rgba(94, 231, 255, ${0.35 * d.glow})`;
     ctx.beginPath();
     ctx.moveTo(pointer.x, pointer.y);
     ctx.lineTo(d.x, d.y);
@@ -461,3 +483,168 @@ document.addEventListener("visibilitychange", () => {
 reduceMotion.addEventListener?.("change", start);
 
 start();
+
+/* ============================================================
+   Easter egg: party mode.
+   Trigger: type "oiia", or tap the avatar 5×. Hinted at in the boot log.
+   Exit: Esc, the ✕ in the dock, or the same trigger again.
+   ============================================================ */
+const party = { on: false, hue: 0, beat: -1, cats: [] };
+const PARTY_BPM = 140;
+const MAX_CATS = 22;
+const catLayer = $("cats");
+const profileEl = document.querySelector(".profile");
+const partyExit = $("party-exit");
+
+const CAT_SVG = `<svg viewBox="0 0 100 100" aria-hidden="true">
+  <g fill="currentColor">
+    <path d="M27 40 31 12l16 18z"/><path d="M73 40 69 12 53 30z"/>
+    <ellipse cx="50" cy="44" rx="25" ry="21"/>
+    <ellipse cx="50" cy="78" rx="21" ry="19"/>
+  </g>
+  <path d="M69 88c20 3 20-16 12-24" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+  <path d="M33 22l5 10-8 1zM67 22l-5 10 8 1z" fill="#ffb3c8"/>
+  <ellipse cx="41" cy="42" rx="5.5" ry="6.5" fill="#fff"/><ellipse cx="59" cy="42" rx="5.5" ry="6.5" fill="#fff"/>
+  <circle cx="42" cy="43" r="3" fill="#111"/><circle cx="60" cy="43" r="3" fill="#111"/>
+  <path d="M46 51l4 3 4-3z" fill="#ff8fb1"/>
+  <path d="M50 54q-3 5-7 2M50 54q3 5 7 2" fill="none" stroke="#111" stroke-width="1.8" stroke-linecap="round"/>
+  <path d="M22 50h12M22 55l12-2M78 50H66M78 55l-12-2" stroke="#111" stroke-opacity=".45" stroke-width="1.4" stroke-linecap="round"/>
+</svg>`;
+const CAT_COLORS = ["#f5f5f5", "#ffb347", "#8b8b8b", "#2b2b2b", "#e8c39e", "#ff9ad5", "#9ad0ff"];
+
+// The avatar turns into a spinning cat
+const avatarCat = document.createElement("span");
+avatarCat.className = "avatar__cat";
+avatarCat.innerHTML = CAT_SVG;
+document.querySelector(".avatar").appendChild(avatarCat);
+
+function spawnCat(x, y, burst = false) {
+  if (reduceMotion.matches) return;
+  if (party.cats.length >= MAX_CATS) {
+    const old = party.cats.shift();
+    old.el.remove();
+  }
+  const size = 48 + Math.random() * 72;
+  const el = document.createElement("div");
+  el.className = "cat";
+  el.style.setProperty("--size", size + "px");
+  el.style.setProperty("--spin", (0.25 + Math.random() * 0.35).toFixed(2) + "s");
+  el.style.color = CAT_COLORS[(Math.random() * CAT_COLORS.length) | 0];
+  el.innerHTML = `<div class="cat__spin">${CAT_SVG}</div>`;
+  catLayer.appendChild(el);
+  const ang = Math.random() * Math.PI * 2;
+  const speed = burst ? 6 + Math.random() * 6 : 2 + Math.random() * 3;
+  party.cats.push({
+    el, size,
+    x: (x ?? Math.random() * (w - size)) - (x != null ? size / 2 : 0),
+    y: (y ?? Math.random() * (h - size)) - (y != null ? size / 2 : 0),
+    vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+    born: performance.now(), life: 9000 + Math.random() * 5000,
+  });
+}
+
+// 140 BPM clock from the track position: works even without an analyser
+function partyBeatClock(t) {
+  const beat = Math.floor(partyAudio.currentTime / (60 / PARTY_BPM));
+  if (partyAudio.paused || beat === party.beat) return;
+  party.beat = beat;
+  level.kick = 1;
+  ripples.push({ x: w / 2, y: h / 2, r: 0 });
+  if (beat % 2 === 0) spawnCat();
+}
+
+function partyFrame(t) {
+  if (!party.on && !party.cats.length) return;
+  party.hue = (t * 0.08) % 360;
+  if (party.on) {
+    document.documentElement.style.setProperty("--party-h", party.hue.toFixed(1));
+    const k = level.kick;
+    profileEl.style.transform =
+      `scale(${1 + 0.05 * k}) rotate(${(Math.sin(t / 380) * 3).toFixed(2)}deg)`;
+    mainEl.style.setProperty("--shake-x", ((Math.random() - 0.5) * 8 * k).toFixed(1) + "px");
+    mainEl.style.setProperty("--shake-y", ((Math.random() - 0.5) * 8 * k).toFixed(1) + "px");
+  }
+  const now = performance.now();
+  for (let i = party.cats.length - 1; i >= 0; i--) {
+    const c = party.cats[i];
+    const boost = 1 + level.kick * 1.5;
+    c.x += c.vx * boost; c.y += c.vy * boost;
+    if (c.x < 0 || c.x > w - c.size) { c.vx *= -1; c.x = Math.max(0, Math.min(w - c.size, c.x)); }
+    if (c.y < 0 || c.y > h - c.size) { c.vy *= -1; c.y = Math.max(0, Math.min(h - c.size, c.y)); }
+    c.el.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) scale(${1 + 0.12 * level.kick})`;
+    if (!party.on || now - c.born > c.life) {
+      c.el.classList.add("is-gone");
+      party.cats.splice(i, 1);
+      setTimeout(() => c.el.remove(), 500);
+    }
+  }
+}
+
+const PARTY_LOG = [
+  ["» injecting <span class=\"hl\">lsd.dll</span>", "ok"],
+  ["» summoning cats", "ok"],
+  ["» o i i a o i i a", "ok"],
+];
+function partyOn() {
+  if (party.on || !entered) return;
+  party.on = true;
+  party.beat = -1;
+  document.documentElement.classList.add("is-party");
+  audio.pause();
+  muted = false; applyMute();
+  partyAudio.currentTime = 0;
+  partyAudio.play().catch(() => {});
+  $("track-name").textContent = "oiia oiia (reez party mix)";
+  partyExit.hidden = false;
+  if (dock.hidden) { dock.hidden = false; requestAnimationFrame(() => dock.classList.add("is-in")); }
+  nameTarget = "oiia";
+  decoding = false; mainPart.style.width = ""; scrambleName();
+  clearInterval(logTimer);
+  $("log").innerHTML = PARTY_LOG.map(([l, s]) => `${l} <span class="ok">[${s}]</span>`).join("\n");
+  $("party-status").textContent = "Party mode on. Press Escape to exit.";
+  for (let i = 0; i < 6; i++) spawnCat(w / 2, h / 2, true);
+}
+function partyOff() {
+  if (!party.on) return;
+  party.on = false;
+  document.documentElement.classList.remove("is-party");
+  document.documentElement.style.removeProperty("--party-h");
+  profileEl.style.transform = "";
+  mainEl.style.removeProperty("--shake-x"); mainEl.style.removeProperty("--shake-y");
+  partyAudio.pause();
+  if (!muted) audio.play().catch(() => {});
+  $("track-name").textContent = CONFIG.trackName;
+  partyExit.hidden = true;
+  nameTarget = "reez";
+  decoding = false; mainPart.style.width = ""; scrambleName();
+  clearInterval(logTimer);
+  renderLog(LOG.length, false);
+  $("party-status").textContent = "Party mode off.";
+}
+const togglePartyMode = () => (party.on ? partyOff() : partyOn());
+partyExit.addEventListener("click", partyOff);
+
+// Keyboard triggers
+let typed = "";
+document.addEventListener("keydown", (e) => {
+  if (!entered || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "Escape") { partyOff(); return; }
+  if (e.key.length !== 1) return;
+  typed = (typed + e.key.toLowerCase()).slice(-4);
+  if (typed === "oiia") { typed = ""; togglePartyMode(); }
+});
+
+
+// Touch trigger: 5 quick taps on the avatar
+let taps = [];
+document.querySelector(".avatar").addEventListener("pointerdown", () => {
+  const now = performance.now();
+  taps = [...taps.filter((t) => now - t < 1800), now];
+  if (taps.length >= 5) { taps = []; togglePartyMode(); }
+});
+
+// Clicking during the party throws more cats
+window.addEventListener("pointerdown", (e) => {
+  if (!party.on || e.target.closest(".dock, .avatar")) return;
+  for (let i = 0; i < 3; i++) spawnCat(e.clientX, e.clientY, true);
+});
