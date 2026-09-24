@@ -356,3 +356,72 @@ body {
 }
 
 .name:focus { outline: none; }
+
+/* ---------- Background video (optional, CONFIG.bgVideo) ---------- */
+
+.backdrop__video {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+  opacity: 0; filter: saturate(0.8) contrast(1.05);
+  transition: opacity 1.2s var(--ease);
+}
+.backdrop__video.is-on { opacity: 0.32; }
+
+/* ---------- Splash: click to enter ---------- */
+
+.enter {
+  position: fixed; inset: 0; z-index: 50;
+  display: grid; place-items: center;
+  background: rgba(5, 5, 6, 0.78);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: opacity 0.6s var(--ease), visibility 0s linear 0.6s;
+}
+.enter[hidden] { display: none; }
+.enter.is-out { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.enter__btn {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 32px 40px;
+  border: 0; background: transparent; color: var(--label);
+  font: 500 clamp(1.125rem, 4.5vw, 1.5rem)/1 var(--font-mono);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.enter__prompt { position: relative; animation: pulse 2.4s var(--ease) infinite; }
+.enter__prompt::before, .enter__prompt::after {
+  content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none;
+}
+.enter__prompt::before { color: var(--accent); }
+.enter__prompt::after { color: var(--cyan); }
+.enter__btn:hover .enter__prompt { animation: none; }
+.enter__btn:hover .enter__prompt::before { opacity: 0.85; animation: slice-a 0.34s steps(2) infinite; }
+.enter__btn:hover .enter__prompt::after  { opacity: 0.85; animation: slice-b 0.34s steps(2) infinite; }
+.enter__hint {
+  font: 400 0.75rem/1 var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.14em;
+  color: var(--label-3);
+}
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ---------- Dock equalizer ---------- */
+
+.dock__eq {
+  display: inline-flex; align-items: flex-end; gap: 2px;
+  height: 14px; margin: 0 4px 0 2px;
+}
+.dock__eq i {
+  display: block; width: 3px; height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transform-origin: bottom;
+  transform: scaleY(0.15);
+}
+.dock__btn[aria-pressed="true"] ~ .dock__eq { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .enter__prompt { animation: none; }
+  .backdrop__video { display: none; }
+}

@@ -7,8 +7,12 @@ const CONFIG = {
   discordId: "",
   timezone: "Europe/Berlin",
   // Shown next to the mute button while assets/audio.mp3 plays. Empty = hidden.
-  trackName: "",
+  trackName: "reez — aimbot.dll",
   volume: 0.35,
+  // Optional looping background video, e.g. "assets/bg.mp4". Empty = off.
+  bgVideo: "",
+  // Background grid pulses to the music (needs http(s), not file://).
+  reactive: true,
 };
 
 /* ============================================================ */
@@ -22,7 +26,6 @@ const store = {
 };
 
 $("year").textContent = new Date().getFullYear();
-requestAnimationFrame(() => $("main").classList.add("is-in"));
 
 /* ---------- Avatar (Spotify picture) with fallback ---------- */
 const avatar = $("avatar-img");
@@ -43,7 +46,7 @@ function renderLog(count, caret) {
     .map(([line, status]) => status ? `${line} <span class="ok">[${status}]</span>` : line)
     .join("\n") + (caret ? '<span class="caret"></span>' : "");
 }
-(function playLog() {
+function playLog() {
   if (reduceMotion.matches) { renderLog(LOG.length, false); return; }
   let i = 0;
   renderLog(0, true);
@@ -51,7 +54,7 @@ function renderLog(count, caret) {
     renderLog(++i, true);
     if (i >= LOG.length) clearInterval(t);
   }, 450);
-})();
+}
 
 /* ---------- Name: decode on load, glitch now and then ---------- */
 const nameEl = $("name");
@@ -105,30 +108,56 @@ function scrambleName() {
 }
 
 if (!reduceMotion.matches) {
-  scrambleName();
   (function loop() {
     setTimeout(() => { if (!document.hidden) glitch(); loop(); }, 3500 + Math.random() * 3500);
   })();
   nameEl.addEventListener("pointerenter", scrambleName);
 }
 
-/* ---------- Sound: assets/audio.mp3 starts on the first interaction ---------- */
+/* ---------- Splash + sound ----------
+   Browsers block sound until a gesture, so the page opens behind a
+   "click to enter" splash. That click starts assets/audio.mp3.       */
 const dock = $("dock");
 const muteBtn = $("mute");
 const audio = $("audio");
+const splash = $("enter");
+const mainEl = $("main");
 audio.volume = CONFIG.volume;
 
-let audioOk = false;
-let interacted = false;
+let audioOk = audio.readyState >= 3;
+let entered = false;
 let muted = store.get("reez:muted") === "1";
+
+// Analyser feeds the background + dock equalizer
+let analyser = null, freq = null;
+const level = { bass: 0, avg: 0, kick: 0, lastKick: 0 };
+const eqBars = [...$("eq").children];
 
 function applyMute() {
   audio.muted = muted;
   muteBtn.setAttribute("aria-pressed", String(muted));
 }
 
+function initAnalyser() {
+  // file:// media counts as cross-origin -> an analyser would output silence
+  if (analyser || !CONFIG.reactive || !location.protocol.startsWith("http")) return;
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaElementSource(audio);
+    analyser = ac.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.55;
+    src.connect(analyser);
+    analyser.connect(ac.destination);
+    freq = new Uint8Array(analyser.frequencyBinCount);
+    audio.addEventListener("play", () => ac.resume());
+    ac.resume();
+  } catch { analyser = null; }
+}
+
 function startSound() {
-  if (!audioOk || !interacted) return;
+  if (!audioOk || !entered) return;
+  initAnalyser();
   applyMute();
   if (!muted) audio.play().catch(() => {});
   $("track-name").textContent = CONFIG.trackName;
@@ -137,16 +166,7 @@ function startSound() {
     requestAnimationFrame(() => dock.classList.add("is-in"));
   }
 }
-
 audio.addEventListener("canplay", () => { audioOk = true; startSound(); }, { once: true });
-
-// Browsers only allow sound after a gesture, so the first click, tap or key starts it.
-function firstInteraction() {
-  interacted = true;
-  startSound();
-  ["pointerdown", "keydown"].forEach((ev) => document.removeEventListener(ev, firstInteraction));
-}
-["pointerdown", "keydown"].forEach((ev) => document.addEventListener(ev, firstInteraction));
 
 muteBtn.addEventListener("click", () => {
   muted = !muted;
@@ -154,6 +174,67 @@ muteBtn.addEventListener("click", () => {
   applyMute();
   if (!muted && audio.paused) audio.play().catch(() => {});
 });
+
+// Optional background video: starts loading right away, fades in on enter
+const bgVideo = $("bg-video");
+if (CONFIG.bgVideo && !reduceMotion.matches) {
+  bgVideo.src = CONFIG.bgVideo;
+  bgVideo.preload = "auto";
+}
+function startVideo() {
+  if (!bgVideo.src) return;
+  const go = () => { bgVideo.classList.add("is-on"); bgVideo.play().catch(() => {}); };
+  if (bgVideo.readyState >= 3) go(); else bgVideo.addEventListener("canplay", go, { once: true });
+}
+
+function enter() {
+  if (entered) return;
+  entered = true;
+  document.removeEventListener("keydown", onSplashKey);
+  splash.classList.add("is-out");
+  setTimeout(() => { splash.hidden = true; }, 650);
+  mainEl.inert = false;
+  mainEl.classList.add("is-in");
+  nameEl.focus({ preventScroll: true });
+  playLog();
+  if (!reduceMotion.matches) scrambleName();
+  startSound();
+  startVideo();
+}
+function onSplashKey(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.key === "Tab") return;
+  e.preventDefault();
+  enter();
+}
+
+splash.hidden = false;
+mainEl.inert = true;
+$("enter-btn").addEventListener("click", enter);
+document.addEventListener("keydown", onSplashKey);
+$("enter-btn").focus({ preventScroll: true, focusVisible: false });
+
+// Called every animation frame by the background
+function readAudio(t) {
+  if (!analyser || audio.paused || audio.muted) {
+    level.bass *= 0.9; level.kick *= 0.9;
+    for (const b of eqBars) b.style.transform = "scaleY(0.15)";
+    return;
+  }
+  analyser.getByteFrequencyData(freq);
+  const band = (a, z) => { let s = 0; for (let i = a; i <= z; i++) s += freq[i]; return s / ((z - a + 1) * 255); };
+  const b = band(0, 2);
+  level.avg += (b - level.avg) * 0.04;
+  level.bass += (b - level.bass) * 0.35;
+  if (b - level.avg > 0.1 && t - level.lastKick > 280) {
+    level.lastKick = t;
+    level.kick = 1;
+    ripples.push({ x: w / 2, y: h / 2, r: 0, soft: true });
+  }
+  level.kick *= 0.9;
+  [band(0, 2), band(4, 9), band(12, 26), band(30, 60)].forEach((v, i) => {
+    eqBars[i].style.transform = `scaleY(${Math.max(0.15, Math.min(1, v * 1.4))})`;
+  });
+}
 
 /* ---------- Discord: copy handle ---------- */
 const discordBtn = $("discord-copy");
@@ -276,6 +357,8 @@ function drawStatic() {
 }
 
 function frame(t) {
+  readAudio(t);
+  const R = RADIUS * (1 + 0.35 * level.bass);
   // Wander when the pointer is idle (touch devices, or mouse left the window)
   if (!pointer.active || t - pointer.lastMove > 4000) {
     pointer.tx = w * (0.5 + 0.35 * Math.sin(t / 5200));
@@ -299,8 +382,8 @@ function frame(t) {
     const dist = Math.hypot(dx, dy);
     let fx = 0, fy = 0, target = 0;
 
-    if (dist < RADIUS) {
-      const f = 1 - dist / RADIUS;
+    if (dist < R) {
+      const f = 1 - dist / R;
       const ease = f * f;
       fx += (dx / (dist || 1)) * PUSH * ease;
       fy += (dy / (dist || 1)) * PUSH * ease;
@@ -312,7 +395,7 @@ function frame(t) {
       const rd = Math.hypot(d.ox - r.x, d.oy - r.y);
       const band = Math.abs(rd - r.r);
       if (band < 40) {
-        const k = (1 - band / 40) * (1 - r.r / maxR);
+        const k = (1 - band / 40) * (1 - r.r / maxR) * (r.soft ? 0.45 : 1);
         fx += ((d.ox - r.x) / (rd || 1)) * 14 * k;
         fy += ((d.oy - r.y) / (rd || 1)) * 14 * k;
         target = Math.max(target, k);
@@ -327,7 +410,7 @@ function frame(t) {
     d.glow += (target - d.glow) * 0.15;
 
     // faint twinkle so the grid never looks frozen
-    const tw = 0.13 + 0.06 * Math.sin(t / 900 + d.seed * 40);
+    const tw = 0.13 + 0.06 * Math.sin(t / 900 + d.seed * 40) + 0.1 * level.kick;
     const a = Math.min(1, tw + d.glow * 0.85);
     const size = 1.4 + d.glow * 1.6;
     ctx.fillStyle = d.glow > 0.05

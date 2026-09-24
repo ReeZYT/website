@@ -20,9 +20,18 @@
 <body>
   <!-- Background: interactive grid that reacts to the pointer -->
   <div class="backdrop" aria-hidden="true">
+    <video id="bg-video" class="backdrop__video" muted loop playsinline preload="none"></video>
     <canvas id="bg-canvas" class="backdrop__canvas"></canvas>
     <div class="backdrop__dim"></div>
     <div class="backdrop__grain"></div>
+  </div>
+
+  <!-- Splash: the click that unlocks sound -->
+  <div class="enter" id="enter" hidden>
+    <button class="enter__btn" id="enter-btn" type="button">
+      <span class="enter__prompt" data-text="[ click to enter ]">[ click to enter ]</span>
+      <span class="enter__hint">sound on &middot; press any key</span>
+    </button>
   </div>
 
   <main id="main" class="main">
@@ -101,12 +110,13 @@
       <svg class="icon-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="stroke" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
       <svg class="icon-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="stroke" d="m17 9 5 6M22 9l-5 6"/></svg>
     </button>
+    <span class="dock__eq" id="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
     <span class="dock__track" id="track-name"></span>
   </div>
 
   <audio id="audio" src="assets/audio.mp3" loop preload="auto"></audio>
 
-  <noscript><style>.main{opacity:1;transform:none}</style></noscript>
+  <noscript><style>.main{opacity:1;transform:none}.enter{display:none}</style></noscript>
   <script src="script.js" defer></script>
 </body>
 </html>
