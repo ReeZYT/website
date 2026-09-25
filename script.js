@@ -66,11 +66,16 @@ const tldPart = nameEl.querySelector(".name__tld");
 const GLYPHS = "01<>/\\|[]{}#$%&*+=-_";
 const randGlyph = () => GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
 
-function decode(el, target, delay = 0, done) {
+// Each scramble gets an id; starting a new one cancels any still running,
+// so two loops can never fight over the same letters.
+let scrambleId = 0;
+
+function decode(el, target, delay, id, done) {
   let frame = 0;
   const settleAt = target.split("").map((_, i) => 6 + i * 3 + Math.floor(Math.random() * 4));
   const last = Math.max(...settleAt);
   const run = () => {
+    if (id !== scrambleId) return;
     el.textContent = target.split("").map((ch, i) =>
       frame >= settleAt[i] ? ch : randGlyph()
     ).join("");
@@ -89,33 +94,52 @@ function glitch() {
 }
 
 let decoding = false;
+let nameTarget = "reez";
+
+// Width of the *final* text, measured on a hidden copy, so it doesn't
+// matter what the scramble is showing at the moment we measure.
+function measure(el, text) {
+  const probe = document.createElement("span");
+  probe.className = el.className;
+  probe.textContent = text;
+  probe.style.cssText = "position:absolute;visibility:hidden;width:auto;white-space:nowrap";
+  el.parentNode.appendChild(probe);
+  // offsetWidth = layout width, unaffected by the party-mode scale/rotate
+  const wpx = probe.offsetWidth;
+  probe.remove();
+  return wpx;
+}
 
 // Lock each part to its final width so scrambling never shifts the layout
 function lockWidths() {
-  if (decoding) return;
-  for (const el of [mainPart, tldPart]) {
-    el.style.width = "";
-    el.style.width = el.getBoundingClientRect().width + "px";
-  }
+  mainPart.style.width = measure(mainPart, nameTarget) + "px";
+  tldPart.style.width = measure(tldPart, ".cc") + "px";
+  nameEl.querySelector(".name__text").dataset.text = nameTarget + ".cc";
 }
 lockWidths();
 document.fonts?.ready.then(lockWidths);
 window.addEventListener("resize", lockWidths);
 
-
-let nameTarget = "reez";
-function scrambleName() {
-  if (decoding) return;
+function scrambleName(force = false) {
+  if (decoding && !force) return;
   decoding = true;
-  decode(mainPart, nameTarget, 0);
-  decode(tldPart, ".cc", 120, () => { decoding = false; lockWidths(); glitch(); });
+  const id = ++scrambleId;
+  lockWidths();
+  let pending = 2;
+  const finish = () => {
+    if (--pending > 0 || id !== scrambleId) return;
+    decoding = false;
+    glitch();
+  };
+  decode(mainPart, nameTarget, 0, id, finish);
+  decode(tldPart, ".cc", 120, id, finish);
 }
 
 if (!reduceMotion.matches) {
   (function loop() {
     setTimeout(() => { if (!document.hidden) glitch(); loop(); }, 3500 + Math.random() * 3500);
   })();
-  nameEl.addEventListener("pointerenter", scrambleName);
+  nameEl.addEventListener("pointerenter", () => scrambleName());
 }
 
 /* ---------- Splash + sound ----------
@@ -598,7 +622,8 @@ function partyOn() {
   partyExit.hidden = false;
   if (dock.hidden) { dock.hidden = false; requestAnimationFrame(() => dock.classList.add("is-in")); }
   nameTarget = "oiia";
-  decoding = false; mainPart.style.width = ""; scrambleName();
+  if (reduceMotion.matches) { mainPart.textContent = nameTarget; lockWidths(); }
+  else scrambleName(true);
   clearInterval(logTimer);
   $("log").innerHTML = PARTY_LOG.map(([l, s]) => `${l} <span class="ok">[${s}]</span>`).join("\n");
   $("party-status").textContent = "Party mode on. Press Escape to exit.";
@@ -616,7 +641,8 @@ function partyOff() {
   $("track-name").textContent = CONFIG.trackName;
   partyExit.hidden = true;
   nameTarget = "reez";
-  decoding = false; mainPart.style.width = ""; scrambleName();
+  if (reduceMotion.matches) { mainPart.textContent = nameTarget; lockWidths(); }
+  else scrambleName(true);
   clearInterval(logTimer);
   renderLog(LOG.length, false);
   $("party-status").textContent = "Party mode off.";
