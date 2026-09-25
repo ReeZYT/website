@@ -1,5 +1,10 @@
+# OS / editor
 .DS_Store
 .idea/
 .claude/
 node_modules/
-tools/gate.mjs
+
+# Local only – not needed by the live site
+tools/
+README.md
+assets/README.md
