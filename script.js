@@ -14,7 +14,7 @@ const CONFIG = {
   // Background grid pulses to the music (needs http(s), not file://).
   reactive: true,
   // Forum gate. Set with `node tools/gate.mjs` – never edit by hand.
-  gate: {"v":1,"i":600000,"s":"7CBmftWQCsn8GNv3x6wqXg==","n":"w97C0BmP1XpYCj8d","d":"Gz/6nqSrb0kHyFEQ6g46i0gRgOqOcQ3I0yCwDe73HLQ7RKVEdo2rR+27BVPaaUNkewnliKvfACP8eyc="},
+  gate: {"v":1,"i":600000,"s":"8V8e/CGIVOAoPBuZUsieBQ==","n":"tWySDmrjIkqagL6H","d":"5njPKoF4NuGsE9KsTGvtoC+2/C/caaiIrVLm60DZVZqGxddjbQ=="},
 };
 
 /* ============================================================ */
