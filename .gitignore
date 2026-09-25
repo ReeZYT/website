@@ -8,3 +8,7 @@ node_modules/
 tools/
 README.md
 assets/README.md
+
+# Build output
+dist/
+package-lock.json
