@@ -5,6 +5,7 @@ Static personal link page. No build step — upload the folder to any static hos
 
 - `index.html` – markup and links (Steam, Discord, Spotify)
 - `styles.css` – tokens and layout
+- `404.html` – self-contained "signal lost" page (GitHub Pages serves it for unknown paths)
 - `script.js` – config at the top (Discord live status, timezone, track name, volume)
 - `assets/` – music + optional background video (see `assets/README.md`)
 - `tools/track.py` – regenerates `assets/audio.mp3` (`pip install numpy scipy`, needs ffmpeg)
