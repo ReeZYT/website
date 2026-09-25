@@ -4,7 +4,7 @@
 const CONFIG = {
   // Optional: your numeric Discord user ID for live status via Lanyard
   // (join discord.gg/lanyard once, then paste the ID here). Empty = off.
-  discordId: "",
+  discordId: "559785484683837450",
   timezone: "Europe/Berlin",
   // Shown next to the mute button while assets/audio.mp3 plays. Empty = hidden.
   trackName: "reez — aimbot.dll",
@@ -50,7 +50,7 @@ function syncLogHeight() {
   const probe = logEl.cloneNode();
   probe.removeAttribute("id");
   probe.style.visibility = "hidden";
-  probe.innerHTML = LOG.map(([l, st]) => st ? `${l} <span class="ok">[${st}]</span>` : l).join("\n");
+  probe.innerHTML = logHTML(LOG);
   document.body.appendChild(probe);
   const hpx = Math.max(probe.offsetHeight, logEl.offsetHeight);
   probe.remove();
@@ -60,10 +60,14 @@ if ("ResizeObserver" in window) new ResizeObserver(syncLogHeight).observe(logEl)
 window.addEventListener("resize", syncLogHeight);
 syncLogHeight();
 
+// One block per line, so small screens can show just the newest lines
+function logHTML(lines, caret = false) {
+  const rows = lines.map(([line, status]) => status ? `${line} <span class="ok">[${status}]</span>` : line);
+  if (caret) rows.push((rows.pop() ?? "") + '<span class="caret"></span>');
+  return rows.map((r) => `<span class="log__line">${r}</span>`).join("");
+}
 function renderLog(count, caret) {
-  $("log").innerHTML = LOG.slice(0, count)
-    .map(([line, status]) => status ? `${line} <span class="ok">[${status}]</span>` : line)
-    .join("\n") + (caret ? '<span class="caret"></span>' : "");
+  $("log").innerHTML = logHTML(LOG.slice(0, count), caret);
 }
 let logTimer = null;
 function playLog() {
@@ -321,7 +325,7 @@ discordBtn.addEventListener("click", async () => {
   copyTimer = setTimeout(() => {
     discordStatus.textContent = "Copy";
     discordStatus.classList.remove("is-done");
-  }, 2000);
+  }, 3000);
 });
 
 /* ---------- Clock ---------- */
@@ -344,6 +348,40 @@ function tick() {
 tick();
 setInterval(tick, 10_000);
 
+/* ---------- Long text in a row: ellipsis, or a slow scroll if motion is ok ---------- */
+function fitMarquee(el) {
+  const track = el.firstElementChild;
+  if (!track) return;
+  el.classList.remove("is-marquee");
+  track.querySelectorAll("[aria-hidden]").forEach((n) => n.remove());
+  const copy = track.firstElementChild;
+  if (copy.offsetWidth <= el.clientWidth + 2 || reduceMotion.matches) return;
+  // Endless loop: two identical copies side by side, the track slides by
+  // exactly one copy (text + gap) and jumps back invisibly.
+  el.classList.add("is-marquee");
+  const twin = copy.cloneNode(true);
+  twin.setAttribute("aria-hidden", "true");
+  track.appendChild(twin);
+  const dist = copy.offsetWidth;
+  el.style.setProperty("--marquee-dist", `-${dist}px`);
+  el.style.setProperty("--marquee-time", `${(dist / 32).toFixed(2)}s`); // ~32px/s
+}
+function setMarquee(el, text) {
+  if (el.dataset.text === text) return; // same text: keep scrolling, no restart
+  el.dataset.text = text;
+  el.title = text;
+  el.innerHTML = "";
+  const track = document.createElement("span");
+  track.className = "marquee__track";
+  const copy = document.createElement("span");
+  copy.className = "marquee__copy";
+  copy.textContent = text;
+  track.appendChild(copy);
+  el.appendChild(track);
+  fitMarquee(el);
+}
+window.addEventListener("resize", () => ["spotify-detail", "steam-detail"].forEach((id) => fitMarquee($(id))));
+
 /* ---------- Discord presence via Lanyard (optional) ---------- */
 const STATUS_LABEL = { online: "Online", idle: "Idle", dnd: "Do not disturb", offline: "Offline" };
 
@@ -355,22 +393,26 @@ async function loadPresence() {
     const { data } = await res.json();
     const status = data.discord_status || "offline";
 
-    const dot = $("presence-dot");
-    dot.dataset.status = status;
-    dot.hidden = false;
+    // Discord row: badge on the icon + "● Online" pill next to the title
+    $("discord-badge").dataset.status = status;
+    $("discord-badge").hidden = false;
+    const pill = $("discord-presence");
+    pill.dataset.status = status;
+    pill.textContent = STATUS_LABEL[status] || "Offline";
+    pill.title = `${STATUS_LABEL[status] || "Offline"} on Discord`;
+    pill.hidden = false;
 
-    const text = $("presence-text");
-    text.textContent = STATUS_LABEL[status] || "Offline";
-    text.hidden = false;
+    // Steam row: what I'm playing (activity type 0 = game)
+    const game = (data.activities || []).find((a) => a.type === 0);
+    setMarquee($("steam-detail"), game ? `Playing ${game.name}` : "1337ReeZ");
 
-    const detail = $("spotify-detail");
-    detail.textContent = data.listening_to_spotify && data.spotify
+    setMarquee($("spotify-detail"), data.listening_to_spotify && data.spotify
       ? `Listening to ${data.spotify.song} – ${data.spotify.artist}`
-      : "Playlists & profile";
+      : "Playlists & profile");
   } catch { /* offline or blocked: keep the static page */ }
 }
 loadPresence();
-setInterval(loadPresence, 30_000);
+setInterval(loadPresence, 3_000);
 
 /* ============================================================
    Background: dot grid that reacts to the pointer.
@@ -398,9 +440,91 @@ function build() {
   const offX = (w % GAP) / 2, offY = (h % GAP) / 2;
   for (let y = offY; y <= h; y += GAP) {
     for (let x = offX; x <= w; x += GAP) {
-      dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random() });
+      dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random(), t: null });
     }
   }
+  buildSigil();
+}
+
+/* ---------- Idle sigil ----------
+   After IDLE_MS without input the page fades out and the dots swarm into
+   a ring of runes around "reez". Any input dissolves it again.        */
+const IDLE_MS = 15_000;
+const idle = { last: performance.now(), k: 0, on: false };
+const sigil = { cx: 0, cy: 0 };
+
+function sampleShape(draw, step) {
+  const oc = document.createElement("canvas");
+  oc.width = w; oc.height = h;
+  const c = oc.getContext("2d");
+  c.fillStyle = c.strokeStyle = "#fff";
+  draw(c);
+  const img = c.getImageData(0, 0, w, h).data;
+  const pts = [];
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      if (img[(y * w + x) * 4 + 3] > 120) pts.push({ x, y });
+    }
+  }
+  return pts;
+}
+const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+function buildSigil() {
+  const cx = sigil.cx = w / 2, cy = sigil.cy = h / 2;
+  const R = Math.min(w, h) * 0.38;
+  const ring = sampleShape((c) => {
+    c.lineWidth = Math.max(2.5, R * 0.018);
+    c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
+    c.lineWidth = Math.max(1.5, R * 0.01);
+    c.beginPath(); c.arc(cx, cy, R * 0.86, 0, Math.PI * 2); c.stroke();
+    // rune ticks between the two rings
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2, long = i % 3 === 0;
+      const r1 = R * 0.87, r2 = R * (long ? 0.99 : 0.93);
+      c.beginPath();
+      c.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      c.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+      c.stroke();
+    }
+  }, 3);
+  const word = sampleShape((c) => {
+    c.font = `800 ${Math.round(R * 0.5)}px ${getComputedStyle(document.body).fontFamily}`;
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText("reez", cx, cy);
+  }, 3);
+
+  const pool = shuffle(dots.slice());
+  const n = Math.floor(pool.length * 0.8);
+  const nRing = Math.min(ring.length, Math.floor(n * 0.45));
+  const nWord = Math.min(word.length, n - nRing);
+  shuffle(ring); shuffle(word);
+  for (const d of dots) d.t = null;
+  for (let i = 0; i < nRing; i++) {
+    const p = ring[i];
+    pool[i].t = { r: Math.hypot(p.x - cx, p.y - cy), a: Math.atan2(p.y - cy, p.x - cx), spin: true };
+  }
+  for (let i = 0; i < nWord; i++) {
+    const p = word[i];
+    pool[nRing + i].t = { x: p.x, y: p.y, spin: false };
+  }
+}
+
+function markActive() {
+  idle.last = performance.now();
+}
+["pointermove", "pointerdown", "keydown", "wheel", "touchstart"].forEach((ev) =>
+  window.addEventListener(ev, markActive, { passive: true }));
+
+function updateIdle(t) {
+  const want = entered && !party.on && !document.hidden && performance.now() - idle.last > IDLE_MS;
+  idle.k = want ? Math.min(1, idle.k + 1 / 260) : Math.max(0, idle.k - 1 / 22);
+  if (want !== idle.on) {
+    idle.on = want;
+    document.documentElement.classList.toggle("is-idle", want);
+  }
+  const k = idle.k;
+  return k * k * (3 - 2 * k); // smoothstep
 }
 
 function drawStatic() {
@@ -412,6 +536,8 @@ function drawStatic() {
 function frame(t) {
   readAudio(t);
   partyFrame(t);
+  const ie = updateIdle(t);
+  const spinA = t * 0.00006;
   const R = RADIUS * (1 + 0.35 * level.bass);
   // Wander when the pointer is idle (touch devices, or mouse left the window)
   if (!pointer.active || t - pointer.lastMove > 4000) {
@@ -438,11 +564,11 @@ function frame(t) {
 
     if (dist < R) {
       const f = 1 - dist / R;
-      const ease = f * f;
+      const ease = f * f * (1 - ie);
       fx += (dx / (dist || 1)) * PUSH * ease;
       fy += (dy / (dist || 1)) * PUSH * ease;
       target = ease;
-      if (f > 0.55) near.push(d);
+      if (f > 0.55 && ie < 0.05) near.push(d);
     }
 
     for (const r of ripples) {
@@ -456,8 +582,18 @@ function frame(t) {
       }
     }
 
+    // home = grid point, or (while idle) the dot's place in the sigil
+    let bx = d.ox, by = d.oy;
+    if (ie > 0 && d.t) {
+      const tx = d.t.spin ? sigil.cx + Math.cos(d.t.a + spinA) * d.t.r : d.t.x;
+      const ty = d.t.spin ? sigil.cy + Math.sin(d.t.a + spinA) * d.t.r : d.t.y;
+      // stagger: each dot leaves at a slightly different moment
+      const e = Math.min(1, Math.max(0, ie * 1.6 - d.seed * 0.6));
+      bx += (tx - d.ox) * e; by += (ty - d.oy) * e;
+      target = Math.max(target, e * 0.75);
+    }
     // spring toward the displaced home position
-    const hx = d.ox + fx, hy = d.oy + fy;
+    const hx = bx + fx, hy = by + fy;
     d.vx = (d.vx + (hx - d.x) * 0.12) * 0.78;
     d.vy = (d.vy + (hy - d.y) * 0.12) * 0.78;
     d.x += d.vx; d.y += d.vy;
@@ -465,7 +601,8 @@ function frame(t) {
 
     // faint twinkle so the grid never looks frozen
     const tw = 0.13 + 0.06 * Math.sin(t / 900 + d.seed * 40) + 0.1 * level.kick;
-    const a = Math.min(1, tw + d.glow * 0.85);
+    let a = Math.min(1, tw + d.glow * 0.85);
+    if (ie > 0 && !d.t) a *= 1 - 0.8 * ie;
     const size = 1.4 + d.glow * 1.6;
     if (party.on) {
       const hue = (party.hue + d.ox * 0.25 + d.oy * 0.15 + d.glow * 90) % 360;
@@ -632,7 +769,7 @@ function partyOn() {
   party.beat = -1;
   document.documentElement.classList.add("is-party");
   audio.pause();
-  muted = false; applyMute();
+  applyMute(); // same saved "reez:muted" setting as the normal track
   partyAudio.currentTime = 0;
   partyAudio.play().catch(() => {});
   $("track-name").textContent = "oiia oiia (reez party mix)";
@@ -642,7 +779,7 @@ function partyOn() {
   if (reduceMotion.matches) { mainPart.textContent = nameTarget; lockWidths(); }
   else scrambleName(true);
   clearInterval(logTimer);
-  $("log").innerHTML = PARTY_LOG.map(([l, s]) => `${l} <span class="ok">[${s}]</span>`).join("\n");
+  $("log").innerHTML = logHTML(PARTY_LOG);
   $("party-status").textContent = "Party mode on. Press Escape to exit.";
   for (let i = 0; i < 6; i++) spawnCat(w / 2, h / 2, true);
 }
@@ -719,4 +856,39 @@ gate.addEventListener("submit", (e) => {
     gateKey.value = "";
     gateTimer = setTimeout(() => { gateState("Access"); gateStatus.textContent = ""; }, 1600);
   }, 700 + Math.random() * 500);
+});
+
+/* ---------- Tab title: marquee, and a nudge when you leave ---------- */
+const TITLES = {
+  base: "reez.cc ▸ aimbot.dll loaded ▸ ",
+  party: "oiia oiia ▸ reez party mix ▸ ",
+  away: "come back…",
+};
+let titlePos = 0;
+setInterval(() => {
+  if (document.hidden) return;
+  if (reduceMotion.matches) { document.title = party.on ? "oiia oiia" : "reez.cc"; return; }
+  const str = party.on ? TITLES.party : TITLES.base;
+  titlePos = (titlePos + 1) % str.length;
+  document.title = str.slice(titlePos) + str.slice(0, titlePos);
+}, 320);
+
+/* ---------- Signal lost: short glitch when you come back to the tab ---------- */
+const signal = $("signal");
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    hiddenAt = performance.now();
+    document.title = TITLES.away;
+    return;
+  }
+  markActive();
+  if (!entered || reduceMotion.matches || performance.now() - hiddenAt < 2500) return;
+  signal.hidden = false;
+  document.documentElement.classList.add("is-glitching");
+  setTimeout(() => {
+    signal.hidden = true;
+    document.documentElement.classList.remove("is-glitching");
+    glitch();
+  }, 750);
 });
