@@ -892,3 +892,47 @@ document.addEventListener("visibilitychange", () => {
     glitch();
   }, 750);
 });
+
+/* ---------- DevTools greeting ----------
+   For everyone who opens the console looking for secrets. */
+(function devtoolsHello() {
+  const ART = [
+    "██████╗ ███████╗███████╗███████╗",
+    "██╔══██╗██╔════╝██╔════╝╚══███╔╝",
+    "██████╔╝█████╗  █████╗    ███╔╝ ",
+    "██╔══██╗██╔══╝  ██╔══╝   ███╔╝  ",
+    "██║  ██║███████╗███████╗███████╗",
+    "╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝",
+  ];
+  // lavender (#b7a6ff) -> cyan (#5ee7ff), one shade per row
+  const mix = (a, b, k) => Math.round(a + (b - a) * k);
+  const rowStyle = (i) => {
+    const k = i / (ART.length - 1);
+    const c = `rgb(${mix(183, 94, k)}, ${mix(166, 231, k)}, 255)`;
+    return `color:${c};font:700 14px/1.05 ui-monospace,Menlo,Consolas,monospace;` +
+      "text-shadow:-1.5px 0 rgba(255,45,110,.55),1.5px 0 rgba(0,220,255,.55),0 0 12px rgba(183,166,255,.45)";
+  };
+  const mono = "font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;";
+  const dim = mono + "color:#7c7c85";
+  const txt = mono + "color:#a3a3ab";
+  const hl = mono + "color:#b7a6ff;font-weight:700";
+  const red = mono + "color:#ff453a;font-weight:700";
+  const pill = "font:700 11px/1 ui-monospace,Menlo,monospace;color:#0b0b0d;background:#b7a6ff;padding:3px 8px;border-radius:999px";
+
+  console.log(ART.map((r) => "%c" + r).join("\n"), ...ART.map((_, i) => rowStyle(i)));
+  console.log("%c aimbot.dll %c loaded successfully · undetected since 2026", pill, dim);
+  console.log(
+    "%c» %cna, auf der Suche nach Easter Eggs? 👀\n" +
+    "%c» %cich hab ein paar versteckt. viel Glück.\n" +
+    "%c» %ckleiner Tipp für ungeduldige: %coiia()",
+    dim, txt, dim, txt, dim, txt, hl
+  );
+  console.log("%c» %cWARNUNG: %cwenn dir jemand sagt, du sollst hier was reinkopieren – lass es.", dim, red, txt);
+
+  // Console shortcut: party mode without typing on the page
+  window.oiia = () => {
+    if (!entered) enter();
+    togglePartyMode();
+    return party.on ? "🐈 o i i a o i i a" : "party over.";
+  };
+})();
