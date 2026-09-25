@@ -43,6 +43,23 @@ const LOG = [
   ["» ready.", ""],
 ];
 
+// Reserve room for the log under the content (see .main padding in CSS)
+const logEl = $("log");
+function syncLogHeight() {
+  // measure the fully typed log up front so nothing jumps while it types
+  const probe = logEl.cloneNode();
+  probe.removeAttribute("id");
+  probe.style.visibility = "hidden";
+  probe.innerHTML = LOG.map(([l, st]) => st ? `${l} <span class="ok">[${st}]</span>` : l).join("\n");
+  document.body.appendChild(probe);
+  const hpx = Math.max(probe.offsetHeight, logEl.offsetHeight);
+  probe.remove();
+  document.documentElement.style.setProperty("--log-h", hpx + "px");
+}
+if ("ResizeObserver" in window) new ResizeObserver(syncLogHeight).observe(logEl);
+window.addEventListener("resize", syncLogHeight);
+syncLogHeight();
+
 function renderLog(count, caret) {
   $("log").innerHTML = LOG.slice(0, count)
     .map(([line, status]) => status ? `${line} <span class="ok">[${status}]</span>` : line)
@@ -655,7 +672,7 @@ let typed = "";
 document.addEventListener("keydown", (e) => {
   if (!entered || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape") { partyOff(); return; }
-  if (e.key.length !== 1) return;
+  if (e.key.length !== 1 || e.target.closest("input, textarea")) return;
   typed = (typed + e.key.toLowerCase()).slice(-4);
   if (typed === "oiia") { typed = ""; togglePartyMode(); }
 });
@@ -673,4 +690,33 @@ document.querySelector(".avatar").addEventListener("pointerdown", () => {
 window.addEventListener("pointerdown", (e) => {
   if (!party.on || e.target.closest(".dock, .avatar")) return;
   for (let i = 0; i < 3; i++) spawnCat(e.clientX, e.clientY, true);
+});
+
+/* ---------- Forum gate ---------- */
+const gate = $("gate");
+const gateKey = $("gate-key");
+const gateBtn = $("gate-btn");
+const gateStatus = $("gate-status");
+let gateTimer = null;
+
+function gateState(label, cls) {
+  gate.classList.remove("is-busy", "is-denied");
+  void gate.offsetWidth;
+  if (cls) gate.classList.add(cls);
+  gateBtn.textContent = label;
+}
+
+gate.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!gateKey.value) { gateKey.focus(); return; }
+  if (gate.classList.contains("is-busy")) return;
+  clearTimeout(gateTimer);
+  gateState("···", "is-busy");
+  gateStatus.textContent = "Checking…";
+  gateTimer = setTimeout(() => {
+    gateState("Denied", "is-denied");
+    gateStatus.textContent = "Access denied.";
+    gateKey.value = "";
+    gateTimer = setTimeout(() => { gateState("Access"); gateStatus.textContent = ""; }, 1600);
+  }, 700 + Math.random() * 500);
 });

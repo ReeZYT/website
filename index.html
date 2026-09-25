@@ -97,6 +97,17 @@
       </ul>
     </nav>
 
+    <form class="gate" id="gate" autocomplete="off" novalidate>
+      <label class="gate__prompt" for="gate-key">
+        <svg class="gate__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <span>forum</span><span class="gate__path">@reez:~$</span>
+        <span class="sr-only">access key</span>
+      </label>
+      <input class="gate__input" id="gate-key" name="key" type="password" placeholder="access key" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+      <button class="gate__btn" id="gate-btn" type="submit">Access</button>
+      <span class="sr-only" id="gate-status" aria-live="polite"></span>
+    </form>
+
     <footer class="footer">
       <span>© <span id="year">2026</span> reez.cc</span>
     </footer>

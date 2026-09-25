@@ -511,5 +511,92 @@ body {
 
 @media (max-width: 480px) {
   .dock__track { display: none; }
-  .main { padding-bottom: max(176px, calc(env(safe-area-inset-bottom) + 160px)); }
+}
+
+/* ---------- Forum gate: a terminal line under the links ---------- */
+
+.gate {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 52px;
+  margin-top: -24px;          /* sits with the links, not as its own section */
+  padding: 6px 6px 6px 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-row);
+  font: 400 0.8125rem/1 var(--font-mono);
+  color: var(--label-3);
+  transition: border-color 0.18s var(--ease), background-color 0.18s var(--ease);
+}
+.gate:hover { border-color: rgba(255, 255, 255, 0.22); }
+.gate:focus-within {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: rgba(183, 166, 255, 0.04);
+}
+
+.gate__prompt {
+  flex: none; display: inline-flex; align-items: center; gap: 0;
+  white-space: nowrap; cursor: text;
+}
+.gate__icon {
+  width: 14px; height: 14px; margin-right: 8px;
+  fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round;
+}
+.gate__prompt > span:not(.sr-only):first-of-type { color: var(--accent); }
+.gate__path { color: var(--label-3); }
+
+.gate__input {
+  flex: 1; min-width: 0;
+  height: 36px; padding: 0;
+  border: 0; outline: 0; background: transparent;
+  font: inherit; font-size: 16px;   /* ≥16px: no zoom-on-focus on iOS */
+  letter-spacing: 0.12em;
+  color: var(--label);
+  caret-color: var(--accent);
+}
+.gate__input::placeholder { color: var(--label-3); opacity: 0.7; letter-spacing: 0.02em; font-size: 0.8125rem; }
+.gate__input:focus-visible { outline: none; }
+
+.gate__btn {
+  flex: none;
+  height: 36px; padding: 0 14px;
+  border: 0; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  font: 500 0.8125rem/1 var(--font-text);
+  color: var(--label-2);
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.gate__btn:hover { background: rgba(255, 255, 255, 0.1); color: var(--label); }
+.gate:focus-within .gate__btn { background: var(--accent); color: #0b0b0d; }
+
+.gate.is-busy .gate__btn { cursor: progress; animation: pulse 0.9s var(--ease) infinite; }
+.gate.is-denied { animation: gate-shake 0.4s var(--ease); border-color: color-mix(in srgb, var(--dnd) 60%, transparent); }
+.gate.is-denied .gate__btn { background: var(--dnd); color: #fff; }
+
+@keyframes gate-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@media (max-width: 380px) {
+  .gate__path { display: none; }
+}
+
+/* ---------- Boot log never covers content ----------
+   The log sits at the bottom of the page (not fixed over it) and the
+   main column reserves its measured height (--log-h, set in script.js). */
+
+body { position: relative; }
+.log { position: absolute; }
+.main {
+  padding-bottom: calc(var(--log-h, 140px) + max(44px, env(safe-area-inset-bottom) + 28px));
+}
+/* Wide screens: log lives in the empty left gutter, so it can float again */
+@media (min-width: 1000px) {
+  body { position: static; }
+  .log { position: fixed; }
+  .main { padding-bottom: max(112px, calc(env(safe-area-inset-bottom) + 96px)); }
 }
