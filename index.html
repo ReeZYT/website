@@ -18,8 +18,9 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- Background: interactive grid that reacts to the pointer -->
+  <!-- Background: drifting smoke + interactive grid that reacts to the pointer -->
   <div class="backdrop" aria-hidden="true">
+    <canvas id="bg-smoke" class="backdrop__smoke"></canvas>
     <video id="bg-video" class="backdrop__video" muted loop playsinline preload="none"></video>
     <canvas id="bg-canvas" class="backdrop__canvas"></canvas>
     <div class="backdrop__trip"></div>

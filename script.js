@@ -990,3 +990,135 @@ document.addEventListener("visibilitychange", () => {
     return party.on ? "🐈 o i i a o i i a" : "party over.";
   };
 })();
+
+/* ============================================================
+   Background: drifting smoke (WebGL, domain-warped fbm noise).
+   Rendered at reduced resolution and scaled up – smoke is soft anyway.
+   Reacts a little to the pointer and the bass; tints in party mode.
+   ============================================================ */
+(() => {
+  const cv = $("bg-smoke");
+  const gl = cv && (cv.getContext("webgl", { alpha: false, antialias: false, premultipliedAlpha: false, powerPreference: "low-power" }));
+  if (!gl) { document.documentElement.classList.add("no-smoke"); return; }
+
+  const VS = `attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }`;
+  const FS = `
+    precision mediump float;
+    uniform vec2 uRes; uniform float uT; uniform vec2 uMouse;
+    uniform float uBass; uniform float uParty; uniform float uHue;
+
+    float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+    float noise(vec2 p){
+      vec2 i = floor(p), f = fract(p);
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1,0)), u.x),
+                 mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y);
+    }
+    float fbm(vec2 p){
+      float v = 0.0, a = 0.5;
+      mat2 r = mat2(0.8, 0.6, -0.6, 0.8);
+      for (int i = 0; i < 5; i++){ v += a * noise(p); p = r * p * 2.02 + 3.1; a *= 0.5; }
+      return v;
+    }
+    vec3 hue(float h){ return clamp(abs(mod(h * 6.0 + vec3(0,4,2), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
+
+    void main(){
+      vec2 uv = gl_FragCoord.xy / uRes;
+      vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / min(uRes.x, uRes.y);
+      float t = uT * 0.045;
+
+      // pointer gently stirs the smoke
+      vec2 m = (uMouse - 0.5 * uRes) / min(uRes.x, uRes.y);
+      float md = length(p - m);
+      p += (p - m) * 0.18 * exp(-md * md * 6.0);
+
+      p *= 1.35;
+      p.y -= t * 0.6;                       // slow upward drift
+      vec2 q = vec2(fbm(p + vec2(0.0, t)), fbm(p + vec2(5.2, 1.3) - t * 0.7));
+      vec2 r = vec2(fbm(p + 3.5 * q + vec2(1.7, 9.2) + t * 0.35),
+                    fbm(p + 3.5 * q + vec2(8.3, 2.8) - t * 0.25));
+      float f = fbm(p + 3.0 * r);
+
+      float s = smoothstep(0.25, 1.05, f * f * 1.6 + 0.35 * length(q));
+      s = pow(s, 1.35);
+      // wisps catch more light near the top, pool darker at the edges
+      s *= 0.75 + 0.35 * uv.y;
+      s *= 1.0 + 0.45 * uBass;
+
+      vec3 base  = vec3(0.028, 0.028, 0.034);
+      vec3 smoke = mix(vec3(0.34, 0.34, 0.38), vec3(0.48, 0.45, 0.60), clamp(r.x, 0.0, 1.0));
+      smoke = mix(smoke, hue(fract(uHue + r.y * 0.4)) * 0.75, uParty);
+      vec3 col = base + smoke * s * 0.62;
+
+      // gentle vignette
+      float v = smoothstep(1.25, 0.25, length((uv - 0.5) * vec2(1.1, 1.0)) * 1.4);
+      col *= 0.55 + 0.45 * v;
+      gl_FragColor = vec4(col, 1.0);
+    }`;
+
+  const sh = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  let prog;
+  try {
+    prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  } catch (e) {
+    console.warn("[smoke]", e);
+    document.documentElement.classList.add("no-smoke");
+    return;
+  }
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, "p");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  for (const n of ["uRes", "uT", "uMouse", "uBass", "uParty", "uHue"]) U[n] = gl.getUniformLocation(prog, n);
+
+  const SCALE = 0.4; // render at 40 % of CSS size
+  let raf = null, sw = 1, shh = 1, partyK = 0, bass = 0;
+  const t0 = performance.now() - Math.random() * 60000;
+
+  function size() {
+    sw = Math.max(1, Math.round(window.innerWidth * SCALE));
+    shh = Math.max(1, Math.round(window.innerHeight * SCALE));
+    cv.width = sw; cv.height = shh;
+    gl.viewport(0, 0, sw, shh);
+  }
+  function draw(now) {
+    partyK += ((party.on ? 1 : 0) - partyK) * 0.04;
+    bass += (level.bass - bass) * 0.1;
+    gl.uniform2f(U.uRes, sw, shh);
+    gl.uniform1f(U.uT, (now - t0) / 1000);
+    gl.uniform2f(U.uMouse, pointer.x * SCALE, (window.innerHeight - pointer.y) * SCALE);
+    gl.uniform1f(U.uBass, bass);
+    gl.uniform1f(U.uParty, partyK);
+    gl.uniform1f(U.uHue, (party.hue || 0) / 360);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  function loop(now) { draw(now); raf = requestAnimationFrame(loop); }
+  function run() {
+    if (raf) cancelAnimationFrame(raf); raf = null;
+    size();
+    if (reduceMotion.matches) { draw(performance.now()); return; }
+    raf = requestAnimationFrame(loop);
+  }
+  let rt = null;
+  window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(run, 120); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = null; } else run();
+  });
+  reduceMotion.addEventListener?.("change", run);
+  cv.addEventListener("webglcontextlost", (e) => { e.preventDefault(); if (raf) cancelAnimationFrame(raf); raf = null; });
+  cv.addEventListener("webglcontextrestored", () => location.reload());
+  run();
+  requestAnimationFrame(() => cv.classList.add("is-on"));
+})();
