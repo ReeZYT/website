@@ -587,6 +587,11 @@ body {
 .gate.is-busy .gate__btn { cursor: progress; animation: pulse 0.9s var(--ease) infinite; }
 .gate.is-denied { animation: gate-shake 0.4s var(--ease); border-color: color-mix(in srgb, var(--dnd) 60%, transparent); }
 .gate.is-denied .gate__btn { background: var(--dnd); color: #fff; }
+.gate.is-granted { border-color: color-mix(in srgb, var(--online) 60%, transparent); }
+.gate.is-granted .gate__btn { background: var(--online); color: #0b0b0d; }
+.gate.is-locked { opacity: 0.6; }
+.gate.is-locked .gate__btn { background: rgba(255, 255, 255, 0.06); color: var(--label-3); font-variant-numeric: tabular-nums; cursor: not-allowed; }
+.gate__input:disabled { cursor: not-allowed; }
 
 @keyframes gate-shake {
   0%, 100% { transform: translateX(0); }
