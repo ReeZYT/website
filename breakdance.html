@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>reez.cc ▸ breaking</title>
+  <meta name="description" content="The idle sigil, but it breaks.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#050506">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    /* Same tokens as styles.css */
+    :root {
+      --bg: #050506;
+      --label: #f2f2f7;
+      --label-2: #a3a3ab;
+      --label-3: #7c7c85;
+      --accent: #b7a6ff;
+      --cyan: #5ee7ff;
+      --fill: rgba(255, 255, 255, 0.055);
+      --fill-hover: rgba(255, 255, 255, 0.095);
+      --fill-press: rgba(255, 255, 255, 0.13);
+      --separator: rgba(255, 255, 255, 0.1);
+      --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+      color-scheme: dark;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      margin: 0; min-height: 100vh; min-height: 100dvh;
+      background: var(--bg); color: var(--label);
+      font: 400 1.0625rem/1.47 var(--font-text);
+      -webkit-font-smoothing: antialiased; overflow: hidden;
+    }
+    ::selection { background: var(--accent); color: #0b0b0d; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ---------- Backdrop ---------- */
+    .backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+    .backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .backdrop__dim {
+      position: absolute; inset: 0;
+      background: radial-gradient(120% 80% at 50% 45%, rgba(5,5,6,0) 0%, rgba(5,5,6,0.3) 70%, rgba(5,5,6,0.7) 100%);
+    }
+    .backdrop__grain {
+      position: absolute; inset: -50%; opacity: 0.06;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    }
+
+    /* ---------- Chrome ---------- */
+    .back {
+      position: fixed; z-index: 2;
+      top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left));
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; padding: 0 14px 0 12px; border-radius: 999px;
+      background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator);
+      color: var(--label-2); text-decoration: none;
+      font: 500 0.8125rem/1 var(--font-mono);
+      transition: background-color 0.18s var(--ease), color 0.18s var(--ease), opacity 0.6s var(--ease);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .back:hover { background: var(--fill-hover); color: var(--label); }
+    .back:active { background: var(--fill-press); }
+    .back svg { width: 16px; height: 16px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .step {
+      position: fixed; z-index: 1; left: 0; right: 0;
+      bottom: max(28px, env(safe-area-inset-bottom));
+      margin: 0; text-align: center; pointer-events: none;
+      font: 500 0.8125rem/1.3 var(--font-mono);
+      letter-spacing: 0.32em; text-transform: lowercase; color: var(--label-3);
+    }
+    .step__name {
+      display: inline-block; color: var(--cyan);
+      transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+    }
+    .step__name.is-out { opacity: 0; transform: translateY(4px); }
+    .step__bpm { color: var(--label-3); }
+
+    .is-calm .back { opacity: 0.25; }
+
+    /* ---------- Sound toggle (top right, same pill as .back) ---------- */
+    .sound {
+      position: fixed; z-index: 2;
+      top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
+      display: inline-flex; align-items: center; gap: 10px;
+      min-height: 44px; padding: 0 14px 0 12px; border: 0; border-radius: 999px;
+      background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator);
+      color: var(--label-2); cursor: pointer;
+      font: 500 0.8125rem/1 var(--font-mono);
+      transition: background-color 0.18s var(--ease), color 0.18s var(--ease), opacity 0.6s var(--ease);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sound:hover { background: var(--fill-hover); color: var(--label); }
+    .sound:active { background: var(--fill-press); }
+    .sound__eq { display: inline-flex; align-items: flex-end; gap: 2px; width: 14px; height: 12px; }
+    .sound__eq i { flex: 1; height: 30%; border-radius: 1px; background: var(--accent); transition: height 0.3s var(--ease); }
+    .is-playing .sound__eq i { animation: eq 0.9s ease-in-out infinite alternate; }
+    .is-playing .sound__eq i:nth-child(2) { animation-delay: -0.3s; }
+    .is-playing .sound__eq i:nth-child(3) { animation-delay: -0.6s; }
+    .is-playing .sound__eq i:nth-child(4) { animation-delay: -0.45s; }
+    @keyframes eq { from { height: 20%; } to { height: 100%; } }
+    .sound[aria-pressed="true"] .sound__name { text-decoration: line-through; color: var(--label-3); }
+    .sound__hint { color: var(--label-3); }
+    .sound__hint[hidden] { display: none; }
+    .is-calm .sound { opacity: 0.25; }
+    @media (max-width: 420px) { .sound__name { display: none; } }
+    @media (prefers-reduced-motion: reduce) { .is-playing .sound__eq i { animation: none; height: 70%; } }
+  </style>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <canvas id="bg"></canvas>
+    <div class="backdrop__dim"></div>
+    <div class="backdrop__grain"></div>
+  </div>
+
+  <a class="back" href="./">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    reez.cc
+  </a>
+
+  <button class="sound" id="sound" type="button" aria-pressed="false" aria-label="Mute music">
+    <span class="sound__eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="sound__name">dusty cypher</span><span class="sound__hint" id="sound-hint" hidden>· tap for sound</span>
+  </button>
+  <audio id="music" src="assets/breaks.mp3" loop preload="auto"></audio>
+
+  <h1 class="sr-only">Breaking – a b-boy made of dots</h1>
+  <p class="step" aria-live="off"><span class="step__bpm">100 bpm</span> · <span class="step__name" id="step-name">b-boy stance</span></p>
+
+  <script>
+    /* ============================================================
+       reez.cc ▸ breaking
+       Sibling of ballet.html: same dot grid and rune ring as the idle
+       sigil, but a b-boy with a sideways cap runs a set – toprock,
+       drop, 6-step, windmill, headspin, freeze. The ring pulses on
+       the beat (100 bpm).
+       ============================================================ */
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+    const canvas = document.getElementById("bg");
+    const ctx = canvas.getContext("2d");
+    const stepName = document.getElementById("step-name");
+
+    const GAP = 22;
+    const RADIUS = 150;
+    const PUSH = 24;
+    const BEAT = 600; // ms, 100 bpm
+
+    let w = 0, h = 0, dpr = 1, rafId = null;
+    let dots = [];
+    const pointer = { x: -9999, y: -9999, tx: -9999, ty: -9999, active: false, lastMove: 0 };
+    const ripples = [];
+    const stage = { cx: 0, cy: 0, R: 0, U: 0, floor: 0 };
+    const form = { k: 0, start: performance.now() };
+
+    /* ---------- Helpers ---------- */
+    const TAU = Math.PI * 2;
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const lerp = (a, b, k) => a + (b - a) * k;
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const EASE = {
+      io: (k) => k * k * k * (k * (k * 6 - 15) + 10),
+      out: (k) => 1 - Math.pow(1 - k, 3),
+      snap: (k) => 1 - Math.pow(1 - k, 5),
+      in: (k) => k * k * k,
+      lin: (k) => k,
+      spin: (k) => k < 0.1 ? (k / 0.1) ** 2 * 0.05 : 0.05 + 0.95 * (1 - Math.pow(1 - (k - 0.1) / 0.9, 1.8)),
+      windup: (k) => (k < 0.15 ? (k / 0.15) ** 2 * 0.075 : 0.075 + (k - 0.15) * (0.925 / 0.85)),
+    };
+
+    function sampleShape(draw, step) {
+      const oc = document.createElement("canvas");
+      oc.width = w; oc.height = h;
+      const c = oc.getContext("2d");
+      c.fillStyle = c.strokeStyle = "#fff";
+      draw(c);
+      const img = c.getImageData(0, 0, w, h).data;
+      const pts = [];
+      for (let y = 0; y < h; y += step)
+        for (let x = 0; x < w; x += step)
+          if (img[(y * w + x) * 4 + 3] > 120) pts.push({ x, y });
+      return pts;
+    }
+
+    /* ============================================================
+       Choreography
+       Angles: a = direction in the picture plane, 0 = straight down,
+       +π/2 = screen right, π = up. b = tilt toward the viewer.
+       Legs: [thigh a, thigh b, shin a, shin b, foot a, foot b]
+       Arms: [upper a, upper b, fore a, fore b]
+       Grounding: the lowest body point touches the floor, unless the
+       pose is "air" – then the pelvis sits at a fixed height (gy).
+       ============================================================ */
+    const mirror = (arr) => arr.map((v, i) => (i % 2 === 0 ? -v : v));
+    const BASE = {
+      t: Math.PI, tb: 0, hd: 0,
+      aR: [0.8, 0.4, -2.5, 0.4], aL: null,
+      lR: [0.15, 0.2, -0.05, 0, 1.3, 0.3], lL: null,
+      x: 0, air: 0, gy: 3.86, spin: 0, hw: 1,
+    };
+    const pose = (o) => {
+      const p = { ...BASE, ...o };
+      p.aL = o.aL || mirror(p.aR);
+      p.lL = o.lL || mirror(p.lR);
+      return p;
+    };
+    // swap sides: right limbs become left limbs and vice versa
+    const flip = (p) => ({ ...p, t: TAU - p.t, hd: -p.hd, x: -p.x, aR: mirror(p.aL), aL: mirror(p.aR), lR: mirror(p.lL), lL: mirror(p.lR) });
+
+    const P = {};
+    P.stance = pose({ hd: 0.12, aR: [0.5, 0.8, -2.0, 0.7], aL: [-0.5, 0.8, 1.9, 0.6], lR: [0.22, 0, 0.18, 0, 1.4, 0.3] });
+    P.rockN = pose({ lR: [0.25, 0.35, -0.2, 0, 1.3, 0.3] });
+    // cross step: right foot crosses in front, arms fling open
+    P.rockA = pose({
+      t: Math.PI + 0.16, x: 0.35, hd: -0.15,
+      aR: [1.55, 0.2, 1.0, 0.3], aL: [-0.5, 0.7, 1.9, 0.5],
+      lR: [-0.55, 0.7, 0.35, 0.4, 0.9, 0.5], lL: [-0.18, 0, -0.1, 0, -1.35, 0.3],
+    });
+    P.rockB = flip(P.rockA);
+    P.drop = pose({
+      t: Math.PI - 0.35, tb: 0.5,
+      aR: [0.35, 0.4, 0.1, 0.3], aL: [-1.2, 0.5, -2.2, 0.4],
+      lR: [0.9, 0.8, -0.3, 0, 1.3, 0.3], lL: [-0.6, 0.3, 0.2, 0, -1.4, 0.3],
+    });
+    // 6-step: leaning on the right hand, legs walk around it
+    const HAND = [0.12, 0, 0.04, 0];
+    const FREE = [-1.8, 0.4, -2.3, 0.2];
+    P.f1 = pose({ t: Math.PI - 1.15, aR: HAND, aL: FREE, lL: [-1.0, 0, -1.0, 0, -1.3, 0], lR: [0.2, 1.2, -0.1, 0.7, 1.3, 0.3] });
+    P.f2 = pose({ t: Math.PI - 1.1, aR: HAND, aL: FREE, lL: [-0.3, 1.2, 0.3, 0.7, -1.3, 0.3], lR: [0.3, -1.1, 0.1, -0.5, 0.2, -0.3] });
+    P.f3 = pose({ t: Math.PI - 1.15, aR: HAND, aL: FREE, lL: [-0.2, -1.1, -0.1, -0.5, -0.2, -0.3], lR: [0.1, 1.2, -0.2, 0.7, 1.3, 0.3] });
+    // windmill: lying across the floor, legs in a wide V sweeping around
+    P.mill = pose({
+      t: Math.PI / 2, tb: 0.15, air: 1, gy: 0.6,
+      aR: [2.4, 0.6, -2.8, 0.3], aL: [0.6, -0.6, 2.8, 0.3],
+      lR: [-2.0, 0.75, -2.0, 0.75, -2.0, 0.75], lL: [-2.0, -0.75, -2.0, -0.75, -2.0, -0.75],
+    });
+    // headspin: upside down, tripod first, then legs open up
+    P.tripod = pose({
+      t: 0.05, hd: 0,
+      aR: [0.9, 0.3, -0.3, 0.2], aL: [-0.9, 0.3, 0.3, 0.2],
+      lR: [2.5, 0.6, 1.3, 0.4, 1.3, 0.2], lL: [-2.5, 0.6, -1.3, 0.4, -1.3, 0.2],
+    });
+    P.head = pose({
+      t: 0, aR: [1.45, 0, 1.55, 0], lR: [2.72, 0, 2.72, 0, 2.72, 0],
+    });
+    P.headTight = pose({
+      t: 0, aR: [0.6, 0.6, -0.9, 0.4], lR: [3.05, 0, 3.08, 0, 3.08, 0],
+    });
+    // freeze: one hand on the floor, body tilted, legs folded in the air
+    P.freeze = pose({
+      t: Math.PI - 2.15, hd: 0.3,
+      aR: [0.05, 0, 0.0, 0], aL: [-2.6, 0.2, -2.9, 0],
+      lR: [-2.4, 0.3, -1.2, 0, -1.3, 0], lL: [-2.0, -0.3, -0.6, 0, -0.7, 0],
+    });
+
+    // Build the set. Each step: { to, d (ms), e (ease), label?, spin?: raw turn count }
+    const ROUTINE = [];
+    let turns = 0;
+    const add = (to, d, e = "io", label = null, spinTurns = 0) => {
+      turns += spinTurns;
+      ROUTINE.push({ to: { ...to, spin: turns }, d, e, label, spin: spinTurns !== 0 });
+    };
+    add(P.stance, 900, "io", "b-boy stance");
+    add(P.stance, 2 * BEAT, "io");
+    for (let i = 0; i < 4; i++) {
+      add(P.rockA, BEAT / 2, "io", i === 0 ? "toprock" : null);
+      add(P.rockN, BEAT / 2, "io");
+      add(P.rockB, BEAT / 2, "io");
+      add(P.rockN, BEAT / 2, "io");
+    }
+    add(P.drop, BEAT, "in", "drop");
+    const F = [P.f1, P.f2, P.f3];
+    for (let i = 0; i < 12; i++) add(F[i % 3], BEAT * 0.55, "io", i === 0 ? "6-step" : null, 1 / 6);
+    add(P.mill, BEAT, "io", "windmill");
+    add(P.mill, BEAT * 5, "windup", null, 4);
+    add(P.tripod, BEAT, "io", "headspin");
+    add(P.head, BEAT * 0.6, "out");
+    add(P.headTight, BEAT * 6, "spin", null, 6);
+    add(P.freeze, BEAT * 0.4, "snap", "freeze");
+    add(P.freeze, BEAT * 3, "io");
+    add(P.stance, BEAT * 1.4, "io", "b-boy stance");
+    const LOOP_MS = ROUTINE.reduce((s, r) => s + r.d, 0);
+
+    const NUM_KEYS = ["t", "tb", "hd", "x", "air", "gy", "hw"];
+    const ARR_KEYS = ["aR", "aL", "lR", "lL"];
+    const cur = pose({});
+    function sample(ms) {
+      let t = ((ms % LOOP_MS) + LOOP_MS) % LOOP_MS, i = 0;
+      while (t > ROUTINE[i].d) { t -= ROUTINE[i].d; i++; }
+      const seg = ROUTINE[i];
+      const to = seg.to;
+      const from = ROUTINE[(i + ROUTINE.length - 1) % ROUTINE.length].to;
+      const k = t / seg.d, e = EASE[seg.e](k);
+      for (const key of NUM_KEYS) cur[key] = lerp(from[key], to[key], e);
+      for (const key of ARR_KEYS) for (let j = 0; j < to[key].length; j++) cur[key][j] = lerp(from[key][j], to[key][j], e);
+      let d = to.spin - from.spin;
+      if (!seg.spin) d -= Math.round(d); // loop seam: take the short way
+      cur.spin = from.spin + d * e;
+      let label = null;
+      for (let j = 0; j <= i; j++) if (ROUTINE[j].label) label = ROUTINE[j].label;
+      return label;
+    }
+
+    /* ---------- Skeleton (units, ≈ 8 tall standing) ---------- */
+    const dir = (a, b) => [Math.sin(a) * Math.cos(b), Math.cos(a) * Math.cos(b), Math.sin(b)];
+    const addv = (p, d, s) => [p[0] + d[0] * s, p[1] + d[1] * s, p[2] + d[2] * s];
+    const mix = (p, q, k) => [lerp(p[0], q[0], k), lerp(p[1], q[1], k), lerp(p[2], q[2], k)];
+    const HEAD_R = 0.47;
+
+    function skeleton(p, time, bounce) {
+      const ta = p.t + 0.03 * bounce * (p.air ? 0 : 1);
+      const pel = [0, 0, 0];
+      const up = dir(ta, p.tb);
+      const right = [-Math.cos(ta), Math.sin(ta), 0];
+      const neck = addv(pel, up, 2.4);
+      const nod = 0.12 * bounce * (p.air ? 0 : 1);
+      const head = addv(neck, dir(ta + p.hd, p.tb + nod), 0.78);
+      const hu = dir(ta + p.hd, p.tb + nod);           // head "up"
+      const hr = [-Math.cos(ta + p.hd), Math.sin(ta + p.hd), 0]; // head "right"
+      const capBack = addv(addv(head, hu, 0.3), hr, -0.42);
+      const capBrim = addv(addv(head, hu, 0.26), hr, 0.78); // sideways cap
+      const shR = addv(addv(neck, right, 0.72 * p.hw), up, -0.2);
+      const shL = addv(addv(neck, right, -0.72 * p.hw), up, -0.2);
+      const arm = (sh, a) => { const el = addv(sh, dir(a[0], a[1]), 1.25); return [el, addv(el, dir(a[2], a[3]), 1.15)]; };
+      const [elR, haR] = arm(shR, p.aR);
+      const [elL, haL] = arm(shL, p.aL);
+      const hipR = addv(pel, right, 0.36 * p.hw), hipL = addv(pel, right, -0.36 * p.hw);
+      const leg = (hip, l) => {
+        const kn = addv(hip, dir(l[0], l[1]), 1.95);
+        const an = addv(kn, dir(l[2], l[3]), 1.85);
+        return [kn, an, addv(an, dir(l[4], l[5]), 0.62)];
+      };
+      const [knR, anR, toR] = leg(hipR, p.lR);
+      const [knL, anL, toL] = leg(hipL, p.lL);
+      const low = Math.max(anR[1], anL[1], toR[1], toL[1], knR[1], knL[1], haR[1], haL[1], elR[1], elL[1], head[1] + HEAD_R, neck[1], 0.3);
+      const ground = lerp(low, p.gy, p.air);
+      return {
+        ground, pel, neck, head, capBack, capBrim,
+        waist: mix(pel, neck, 0.33), chest: mix(pel, neck, 0.78),
+        shR, shL, elR, elL, haR, haL, hipR, hipL, knR, knL, anR, anL, toR, toL,
+      };
+    }
+
+    /* Body parts: capsules [from, to, r0, r1], discs [center, r] */
+    const CAPS = [
+      ["pel", "waist", 0.44, 0.36], ["waist", "chest", 0.36, 0.52], ["chest", "neck", 0.46, 0.16],
+      ["shR", "elR", 0.17, 0.14], ["elR", "haR", 0.14, 0.1], ["shL", "elL", 0.17, 0.14], ["elL", "haL", 0.14, 0.1],
+      ["hipR", "knR", 0.3, 0.24], ["knR", "anR", 0.24, 0.2], ["anR", "toR", 0.17, 0.14],   // baggy pants, sneakers
+      ["hipL", "knL", 0.3, 0.24], ["knL", "anL", 0.24, 0.2], ["anL", "toL", 0.17, 0.14],
+      ["neck", "head", 0.12, 0.12], ["capBack", "capBrim", 0.2, 0.08],
+    ];
+    const LEN = { pel: 0.8, waist: 1.08, chest: 0.53, shR: 1.25, elR: 1.15, shL: 1.25, elL: 1.15, hipR: 1.95, knR: 1.85, anR: 0.62, hipL: 1.95, knL: 1.85, anL: 0.62, neck: 0.4, capBack: 1.2 };
+    const PARTS = [
+      ...CAPS.map((c) => ({ kind: "cap", c, area: 2.1 * (c[2] + c[3]) * LEN[c[0]], glow: c[0] === "capBack" ? 1 : 0.85, hot: c[0] === "capBack" || c[0] === "anR" || c[0] === "anL" })),
+      { kind: "disc", d: ["head", HEAD_R], area: Math.PI * HEAD_R * HEAD_R * 1.3, glow: 0.95 },
+      { kind: "floor", area: 2.2, glow: 0.4 }, // a short line of stage floor under the dancer
+    ];
+
+    /* ---------- Build: grid + assign every dot a place ---------- */
+    function build() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = innerWidth; h = innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dots = [];
+      const offX = (w % GAP) / 2, offY = (h % GAP) / 2;
+      for (let y = offY; y <= h; y += GAP)
+        for (let x = offX; x <= w; x += GAP)
+          dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random(), t: null });
+
+      const cx = stage.cx = w / 2, cy = stage.cy = h / 2;
+      const R = stage.R = Math.min(w, h) * 0.4;
+      stage.U = (R * 0.86 * 2 * 0.86) / 8.8;
+      stage.floor = cy + 4.1 * stage.U;
+
+      const ring = sampleShape((c) => {
+        c.lineWidth = Math.max(2.5, R * 0.018);
+        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.stroke();
+        c.lineWidth = Math.max(1.5, R * 0.01);
+        c.beginPath(); c.arc(cx, cy, R * 0.86, 0, TAU); c.stroke();
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * TAU, long = i % 3 === 0;
+          const r1 = R * 0.87, r2 = R * (long ? 0.99 : 0.93);
+          c.beginPath();
+          c.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+          c.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+          c.stroke();
+        }
+      }, 3);
+
+      const pool = shuffle(dots.slice());
+      const n = Math.floor(pool.length * 0.86);
+      const nRing = Math.min(ring.length, Math.floor(n * 0.32));
+      const nFig = n - nRing;
+      shuffle(ring);
+      let k = 0;
+      for (let i = 0; i < nRing; i++, k++) {
+        const p = ring[i];
+        pool[k].t = { kind: "ring", r: Math.hypot(p.x - cx, p.y - cy), a: Math.atan2(p.y - cy, p.x - cx), glow: 0.7 };
+      }
+      const total = PARTS.reduce((s, p) => s + p.area, 0);
+      for (const part of PARTS) {
+        const cnt = Math.max(4, Math.round((part.area / total) * nFig));
+        for (let i = 0; i < cnt && k < pool.length; i++, k++) {
+          const t = { kind: part.kind, part, glow: part.glow };
+          if (part.kind === "cap") {
+            t.u = (i + Math.random()) / cnt;
+            t.v = Math.random() < 0.4 ? (Math.random() < 0.5 ? -1 : 1) : Math.random() * 2 - 1;
+          } else if (part.kind === "floor") {
+            t.u = (i + 0.5) / cnt * 2 - 1; t.v = Math.random() * 2 - 1;
+          } else {
+            t.s = Math.sqrt((i + 0.5) / cnt); t.phi = i * 2.39996;
+          }
+          pool[k].t = t;
+        }
+      }
+      for (; k < pool.length; k++) pool[k].t = null;
+    }
+
+    /* ---------- Per frame ---------- */
+    let S = null, proj = {};
+    const cam = { c: 1, s: 0 };
+    const PITCH = 0.3;
+
+    function toScreen(p) {
+      const x = p[0] * cam.c - p[2] * cam.s;
+      const z = p[0] * cam.s + p[2] * cam.c;
+      const U = stage.U;
+      return [stage.cx + (x + cur.x) * U, stage.floor + (p[1] - S.ground) * U + z * PITCH * U, z];
+    }
+
+    function pose3d(time, bounce) {
+      S = skeleton(cur, time, bounce);
+      const th = cur.spin * TAU;
+      cam.c = Math.cos(th); cam.s = Math.sin(th);
+      proj = {};
+      for (const key in S) if (key !== "ground") proj[key] = toScreen(S[key]);
+    }
+
+    function target(t, spinA, pulse) {
+      const U = stage.U;
+      if (t.kind === "ring") {
+        const r = t.r * (1 + 0.03 * pulse);
+        return [stage.cx + Math.cos(t.a + spinA) * r, stage.cy + Math.sin(t.a + spinA) * r, 0];
+      }
+      if (t.kind === "cap") {
+        const [fa, fb, r0, r1] = t.part.c;
+        const A = proj[fa], B = proj[fb];
+        const dx = B[0] - A[0], dy = B[1] - A[1];
+        const len = Math.hypot(dx, dy) || 1;
+        const r = lerp(r0, r1, t.u) * U * t.v;
+        return [A[0] + dx * t.u - (dy / len) * r, A[1] + dy * t.u + (dx / len) * r, lerp(A[2], B[2], t.u)];
+      }
+      if (t.kind === "floor") {
+        const k = 1 - t.u * t.u; // thins out towards the ends
+        return [stage.cx + t.u * 3.6 * U, stage.floor + (0.22 + 0.12 * t.v * k) * U, 0];
+      }
+      const [c, rr] = t.part.d;
+      const C = proj[c], r = rr * U * t.s;
+      return [C[0] + Math.cos(t.phi) * r, C[1] + Math.sin(t.phi) * r, C[2] + 0.2];
+    }
+
+    let lastLabel = null;
+    function setLabel(label) {
+      if (label === lastLabel) return;
+      lastLabel = label;
+      stepName.classList.add("is-out");
+      setTimeout(() => { stepName.textContent = label; stepName.classList.remove("is-out"); }, 160);
+    }
+
+    function frame(time) {
+      const since = time - form.start;
+      form.k = since > 700 ? Math.min(1, form.k + 1 / 170) : 0;
+      const ie = form.k * form.k * (3 - 2 * form.k);
+      const dance = Math.max(0, since - 2600);
+      setLabel(sample(dance));
+      // beat: sharp pulse on every beat, a small head-nod bounce in between
+      // lock the beat to the music while it plays (the track is 100 bpm too)
+      const playing = music && !music.paused;
+      const ph = ((playing ? music.currentTime * 1000 : dance) % BEAT) / BEAT;
+      const pulse = playing || dance > 0 ? Math.exp(-ph * 6) : 0;
+      const bounce = Math.sin(ph * Math.PI);
+      pose3d(time, bounce);
+      const spinA = time * 0.00006;
+
+      pointer.x += (pointer.tx - pointer.x) * 0.18;
+      pointer.y += (pointer.ty - pointer.y) * 0.18;
+      const push = pointer.active && time - pointer.lastMove < 4000;
+      const maxR = Math.max(w, h);
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        ripples[i].r += 9;
+        if (ripples[i].r > maxR) ripples.splice(i, 1);
+      }
+      document.documentElement.classList.toggle("is-calm", !push && ie > 0.9);
+
+      ctx.clearRect(0, 0, w, h);
+      for (const d of dots) {
+        let fx = 0, fy = 0, glowT = 0;
+        if (push) {
+          const dx = d.x - pointer.x, dy = d.y - pointer.y, dist = Math.hypot(dx, dy);
+          if (dist < RADIUS) {
+            const f = 1 - dist / RADIUS, ease = f * f * (1 - 0.6 * ie);
+            fx += (dx / (dist || 1)) * PUSH * ease;
+            fy += (dy / (dist || 1)) * PUSH * ease;
+            glowT = ease;
+          }
+        }
+        for (const r of ripples) {
+          const rd = Math.hypot(d.ox - r.x, d.oy - r.y), band = Math.abs(rd - r.r);
+          if (band < 40) {
+            const k = (1 - band / 40) * (1 - r.r / maxR);
+            fx += ((d.ox - r.x) / (rd || 1)) * 14 * k;
+            fy += ((d.oy - r.y) / (rd || 1)) * 14 * k;
+            glowT = Math.max(glowT, k);
+          }
+        }
+
+        let bx = d.ox, by = d.oy, depth = 0;
+        if (ie > 0 && d.t) {
+          const p = target(d.t, spinA, pulse);
+          const e = Math.min(1, Math.max(0, ie * 1.6 - d.seed * 0.6));
+          bx += (p[0] - d.ox) * e; by += (p[1] - d.oy) * e;
+          depth = p[2] * e;
+          const pulsing = d.t.kind === "ring" || d.t.kind === "floor";
+          glowT = Math.max(glowT, e * (pulsing ? d.t.glow + 0.3 * pulse : d.t.glow));
+        } else if (ie > 0) {
+          glowT = Math.max(glowT, 0.1 * pulse * ie); // the empty grid breathes with the beat
+        }
+        const hx = bx + fx, hy = by + fy;
+        const stiff = d.t && d.t.kind !== "ring" ? 0.2 : 0.12;
+        d.vx = (d.vx + (hx - d.x) * stiff) * 0.74;
+        d.vy = (d.vy + (hy - d.y) * stiff) * 0.74;
+        d.x += d.vx; d.y += d.vy;
+        d.glow += (glowT - d.glow) * 0.2;
+
+        const tw = 0.13 + 0.06 * Math.sin(time / 900 + d.seed * 40);
+        let a = Math.min(1, tw + d.glow * 0.85);
+        if (ie > 0 && !d.t) a *= 1 - 0.75 * ie;
+        a *= clamp(1 + depth * 0.22, 0.45, 1.15);
+        const size = 1.4 + d.glow * 1.6;
+        const hot = d.t && d.t.part && d.t.part.hot;
+        ctx.fillStyle = d.glow > 0.05
+          ? hot
+            ? `rgba(${(200 - 20 * d.glow) | 0}, ${(170 + 10 * d.glow) | 0}, 255, ${Math.min(1, a)})`
+            : `rgba(${(183 - 90 * d.glow) | 0}, ${(166 + 60 * d.glow) | 0}, 255, ${Math.min(1, a)})`
+          : `rgba(210, 200, 255, ${a})`;
+        ctx.fillRect(d.x - size / 2, d.y - size / 2, size, size);
+      }
+      rafId = requestAnimationFrame(frame);
+    }
+
+    /* Reduced motion: one still freeze */
+    function drawStatic() {
+      ctx.clearRect(0, 0, w, h);
+      Object.assign(cur, P.freeze, { aR: P.freeze.aR.slice(), aL: P.freeze.aL.slice(), lR: P.freeze.lR.slice(), lL: P.freeze.lL.slice() });
+      pose3d(0, 0);
+      for (const d of dots) {
+        if (!d.t) { ctx.fillStyle = "rgba(210, 200, 255, 0.1)"; ctx.fillRect(d.ox - 0.7, d.oy - 0.7, 1.4, 1.4); continue; }
+        const p = target(d.t, 0, 0);
+        ctx.fillStyle = `rgba(${(183 - 90 * d.t.glow) | 0}, ${(166 + 60 * d.t.glow) | 0}, 255, 0.85)`;
+        ctx.fillRect(p[0] - 1.2, p[1] - 1.2, 2.4, 2.4);
+      }
+      stepName.textContent = "freeze";
+    }
+
+    function start() {
+      stop();
+      build();
+      if (reduceMotion.matches) { drawStatic(); return; }
+      rafId = requestAnimationFrame(frame);
+    }
+    function stop() { if (rafId) cancelAnimationFrame(rafId); rafId = null; }
+
+    addEventListener("pointermove", (e) => {
+      pointer.tx = e.clientX; pointer.ty = e.clientY;
+      if (!pointer.active) { pointer.x = e.clientX; pointer.y = e.clientY; }
+      pointer.active = true; pointer.lastMove = performance.now();
+    }, { passive: true });
+    document.documentElement.addEventListener("pointerleave", () => { pointer.active = false; });
+    addEventListener("pointerdown", (e) => {
+      if (reduceMotion.matches) return;
+      ripples.push({ x: e.clientX, y: e.clientY, r: 0 });
+    }, { passive: true });
+    addEventListener("keydown", (e) => { if (e.key === "Escape") location.href = "./"; });
+
+    let resizeTimer = null;
+    addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(start, 120); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else start(); });
+    reduceMotion.addEventListener?.("change", start);
+
+    start();
+
+    /* ---------- Music ----------
+       Same mute setting as the home page ("reez:muted"). Browsers may block
+       autoplay; then the first click / key press anywhere starts it.      */
+    var music = document.getElementById("music");
+    const soundBtn = document.getElementById("sound");
+    const soundHint = document.getElementById("sound-hint");
+    const store = {
+      get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+      set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
+    };
+    let muted = store.get("reez:muted") === "1";
+    music.volume = 0.35;
+    const syncSound = () => {
+      soundBtn.setAttribute("aria-pressed", String(muted));
+      soundBtn.setAttribute("aria-label", muted ? "Unmute music" : "Mute music");
+      document.documentElement.classList.toggle("is-playing", !music.paused && !muted);
+      soundHint.hidden = muted || !music.paused;
+    };
+    const playMusic = () => {
+      if (muted) return syncSound();
+      music.muted = false;
+      music.play().then(syncSound, syncSound);
+    };
+    ["play", "pause"].forEach((ev) => music.addEventListener(ev, syncSound));
+    soundBtn.addEventListener("click", () => {
+      muted = music.paused && !muted ? false : !muted;
+      store.set("reez:muted", muted ? "1" : "0");
+      if (muted) music.pause(); else playMusic();
+      syncSound();
+    });
+    const unlock = (e) => {
+      if (e.target.closest && e.target.closest("#sound")) return;
+      if (music.paused) playMusic();
+    };
+    addEventListener("pointerdown", unlock, { passive: true });
+    addEventListener("keydown", unlock);
+    playMusic();
+  </script>
+</body>
+</html>

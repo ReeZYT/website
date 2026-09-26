@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>reez.cc ▸ ballet</title>
+  <meta name="description" content="The idle sigil, but she dances.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#050506">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <style>
+    /* Same tokens as styles.css */
+    :root {
+      --bg: #050506;
+      --label: #f2f2f7;
+      --label-2: #a3a3ab;
+      --label-3: #7c7c85;
+      --accent: #b7a6ff;
+      --cyan: #5ee7ff;
+      --fill: rgba(255, 255, 255, 0.055);
+      --fill-hover: rgba(255, 255, 255, 0.095);
+      --fill-press: rgba(255, 255, 255, 0.13);
+      --separator: rgba(255, 255, 255, 0.1);
+      --font-text: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+      --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+      --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+      color-scheme: dark;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      margin: 0; min-height: 100vh; min-height: 100dvh;
+      background: var(--bg); color: var(--label);
+      font: 400 1.0625rem/1.47 var(--font-text);
+      -webkit-font-smoothing: antialiased; overflow: hidden;
+    }
+    ::selection { background: var(--accent); color: #0b0b0d; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ---------- Backdrop ---------- */
+    .backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+    .backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .backdrop__dim {
+      position: absolute; inset: 0;
+      background: radial-gradient(120% 80% at 50% 45%, rgba(5,5,6,0) 0%, rgba(5,5,6,0.3) 70%, rgba(5,5,6,0.7) 100%);
+    }
+    .backdrop__grain {
+      position: absolute; inset: -50%; opacity: 0.06;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    }
+
+    /* ---------- Chrome ---------- */
+    .back {
+      position: fixed; z-index: 2;
+      top: max(16px, env(safe-area-inset-top)); left: max(16px, env(safe-area-inset-left));
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; padding: 0 14px 0 12px; border-radius: 999px;
+      background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator);
+      color: var(--label-2); text-decoration: none;
+      font: 500 0.8125rem/1 var(--font-mono);
+      transition: background-color 0.18s var(--ease), color 0.18s var(--ease), opacity 0.6s var(--ease);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .back:hover { background: var(--fill-hover); color: var(--label); }
+    .back:active { background: var(--fill-press); }
+    .back svg { width: 16px; height: 16px; fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .step {
+      position: fixed; z-index: 1; left: 0; right: 0;
+      bottom: max(28px, env(safe-area-inset-bottom));
+      margin: 0; text-align: center; pointer-events: none;
+      font: 500 0.8125rem/1.3 var(--font-mono);
+      letter-spacing: 0.32em; text-transform: lowercase; color: var(--label-3);
+    }
+    .step__name {
+      display: inline-block; color: var(--accent);
+      transition: opacity 0.35s var(--ease), transform 0.35s var(--ease);
+    }
+    .step__name.is-out { opacity: 0; transform: translateY(4px); }
+    .step__count { color: var(--label-3); }
+
+    /* fade the chrome while she dances, bring it back on input */
+    .is-calm .back { opacity: 0.25; }
+
+    /* ---------- Sound toggle (top right, same pill as .back) ---------- */
+    .sound {
+      position: fixed; z-index: 2;
+      top: max(16px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right));
+      display: inline-flex; align-items: center; gap: 10px;
+      min-height: 44px; padding: 0 14px 0 12px; border: 0; border-radius: 999px;
+      background: var(--fill); box-shadow: inset 0 0 0 1px var(--separator);
+      color: var(--label-2); cursor: pointer;
+      font: 500 0.8125rem/1 var(--font-mono);
+      transition: background-color 0.18s var(--ease), color 0.18s var(--ease), opacity 0.6s var(--ease);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sound:hover { background: var(--fill-hover); color: var(--label); }
+    .sound:active { background: var(--fill-press); }
+    .sound__eq { display: inline-flex; align-items: flex-end; gap: 2px; width: 14px; height: 12px; }
+    .sound__eq i { flex: 1; height: 30%; border-radius: 1px; background: var(--accent); transition: height 0.3s var(--ease); }
+    .is-playing .sound__eq i { animation: eq 0.9s ease-in-out infinite alternate; }
+    .is-playing .sound__eq i:nth-child(2) { animation-delay: -0.3s; }
+    .is-playing .sound__eq i:nth-child(3) { animation-delay: -0.6s; }
+    .is-playing .sound__eq i:nth-child(4) { animation-delay: -0.45s; }
+    @keyframes eq { from { height: 20%; } to { height: 100%; } }
+    .sound[aria-pressed="true"] .sound__name { text-decoration: line-through; color: var(--label-3); }
+    .sound__hint { color: var(--label-3); }
+    .sound__hint[hidden] { display: none; }
+    .is-calm .sound { opacity: 0.25; }
+    @media (max-width: 420px) { .sound__name { display: none; } }
+    @media (prefers-reduced-motion: reduce) { .is-playing .sound__eq i { animation: none; height: 70%; } }
+  </style>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true">
+    <canvas id="bg"></canvas>
+    <div class="backdrop__dim"></div>
+    <div class="backdrop__grain"></div>
+  </div>
+
+  <a class="back" href="./">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    reez.cc
+  </a>
+
+  <button class="sound" id="sound" type="button" aria-pressed="false" aria-label="Mute music">
+    <span class="sound__eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="sound__name">music box waltz</span><span class="sound__hint" id="sound-hint" hidden>· tap for sound</span>
+  </button>
+  <audio id="music" src="assets/ballet.mp3" loop preload="auto"></audio>
+
+  <h1 class="sr-only">Ballet – a dancer made of dots</h1>
+  <p class="step" aria-live="off"><span class="step__count" id="step-count">01</span> · <span class="step__name" id="step-name">bras bas</span></p>
+
+  <script>
+    /* ============================================================
+       reez.cc ▸ ballet
+       Same dot grid as the idle sigil on the home page: the dots swarm
+       into the spinning rune ring, but instead of "reez" a dancer made
+       of dots runs through a short ballet routine inside it.
+       The dancer is a small 3D stick skeleton (angles per bone), posed
+       by keyframes; every dot is pinned to a spot on one body part.
+       ============================================================ */
+    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+    const canvas = document.getElementById("bg");
+    const ctx = canvas.getContext("2d");
+    const stepName = document.getElementById("step-name");
+    const stepCount = document.getElementById("step-count");
+
+    const GAP = 22;        // a bit denser than the home page so she reads well
+    const RADIUS = 150;
+    const PUSH = 24;
+
+    let w = 0, h = 0, dpr = 1, rafId = null;
+    let dots = [];
+    const pointer = { x: -9999, y: -9999, tx: -9999, ty: -9999, active: false, lastMove: 0 };
+    const ripples = [];
+    const stage = { cx: 0, cy: 0, R: 0, U: 0, floor: 0 };
+    const form = { k: 0, start: performance.now() };
+
+    /* ---------- Helpers ---------- */
+    const TAU = Math.PI * 2;
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const lerp = (a, b, k) => a + (b - a) * k;
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const EASE = {
+      io: (k) => k * k * k * (k * (k * 6 - 15) + 10),
+      out: (k) => 1 - Math.pow(1 - k, 3),
+      in: (k) => k * k * k,
+      lin: (k) => k,
+      spin: (k) => k < 0.12 ? (k / 0.12) ** 2 * 0.06 : 0.06 + 0.94 * (1 - Math.pow(1 - (k - 0.12) / 0.88, 2.2)),
+    };
+
+    function sampleShape(draw, step) {
+      const oc = document.createElement("canvas");
+      oc.width = w; oc.height = h;
+      const c = oc.getContext("2d");
+      c.fillStyle = c.strokeStyle = "#fff";
+      draw(c);
+      const img = c.getImageData(0, 0, w, h).data;
+      const pts = [];
+      for (let y = 0; y < h; y += step)
+        for (let x = 0; x < w; x += step)
+          if (img[(y * w + x) * 4 + 3] > 120) pts.push({ x, y });
+      return pts;
+    }
+
+    /* ============================================================
+       Choreography
+       Angles: a = direction in the picture plane, 0 = straight down,
+       +π/2 = to the (screen) right, π = up. b = tilt toward the viewer.
+       Legs: [thigh a, thigh b, shin a, shin b, foot a, foot b]
+       Arms: [upper a, upper b, fore a, fore b]
+       ============================================================ */
+    const mirror = (arr) => arr.map((v, i) => (i % 2 === 0 ? -v : v));
+    const BASE = {
+      t: Math.PI, tb: 0, hd: 0,              // torso direction, head tilt
+      aR: [0.42, 0.25, -0.35, 0.35], aL: null,
+      lR: [0.05, 0, 0.03, 0, 1.45, 0.3], lL: null,
+      x: 0, lift: 0, air: 0, spin: 0, hw: 1, // travel, jump height, airborne, turns, body width (1 = facing us)
+    };
+    const pose = (o) => {
+      const p = { ...BASE, ...o };
+      p.aL = o.aL || mirror(p.aR);
+      p.lL = o.lL || mirror(p.lR);
+      return p;
+    };
+    const ARMS = {
+      bas:    [0.42, 0.25, -0.35, 0.35],
+      first:  [0.75, 0.75, -1.25, 0.45],
+      second: [1.3, 0.2, 1.45, 0.1],
+      fifth:  [2.55, 0.25, 3.75, 0.2],
+    };
+    const POINTE = [-0.03, 0, -0.01, 0, -0.01, 0];
+    const P = {
+      brasBas: pose({ aR: ARMS.bas }),
+      first:   pose({ aR: ARMS.first }),
+      second:  pose({ aR: ARMS.second }),
+      plie:    pose({ aR: ARMS.first, aL: mirror(ARMS.second), lR: [0.55, 0.1, -0.12, 0, 1.45, 0.3] }),
+      retire:  pose({ aR: ARMS.fifth, lR: [1.35, 0.25, -1.1, 0, -1.1, 0], lL: POINTE }),
+      devel:   pose({ t: Math.PI + 0.12, aR: [1.55, 0.2, 1.7, 0.1], lR: [1.5, 0.1, 1.55, 0, 1.6, 0], lL: [-0.1, 0, -0.06, 0, -0.06, 0] }),
+      arabesque: pose({
+        hw: 0.35, t: Math.PI + 0.4, hd: -0.1,
+        aL: [-2.0, 0.1, -2.05, 0], aR: [1.75, 0, 1.8, 0],
+        lR: [1.95, 0, 1.98, 0, 2.02, 0], lL: [-0.04, 0, -0.02, 0, -0.02, 0],
+      }),
+      glissade: pose({
+        hw: 0.35, t: Math.PI + 0.15, x: 1.5,
+        aL: [-0.9, 0, -1.3, 0], aR: [0.6, 0, 0.9, 0],
+        lL: [-0.5, 0, 0.12, 0, -1.45, 0.3], lR: [0.45, 0, 0.45, 0, 0.9, 0],
+      }),
+      jete: pose({
+        hw: 0.35, t: Math.PI + 0.1, x: 0, lift: 1.0, air: 1,
+        aL: [-2.25, 0, -2.35, 0], aR: [1.5, 0, 1.55, 0],
+        lL: [-1.62, 0, -1.6, 0, -1.65, 0], lR: [1.72, 0, 1.75, 0, 1.8, 0],
+      }),
+      land: pose({
+        hw: 0.35, t: Math.PI + 0.22, x: -1.5,
+        aL: [-1.9, 0, -2.0, 0], aR: [1.4, 0, 1.5, 0],
+        lL: [-0.45, 0, 0.12, 0, -1.45, 0.3], lR: [1.3, 0, 1.6, 0, 1.65, 0],
+      }),
+      sousSus: pose({ aR: ARMS.fifth, lR: [0.02, 0, 0, 0, 0, 0] }),
+      reverence: pose({
+        tb: 0.55, aR: [1.0, 0.2, 1.2, 0.2],
+        lR: [0.15, -0.6, 0.1, -0.9, 0.1, -0.9], lL: [-0.35, 0, -0.05, 0, -1.45, 0.3],
+      }),
+    };
+    const turn = (p, n) => ({ ...p, spin: n });
+
+    // [target pose, duration ms, ease, label?]
+    const ROUTINE = [
+      [P.brasBas, 1400, "io", "bras bas"],
+      [P.brasBas, 700, "io"],
+      [P.first, 1000, "io", "port de bras"],
+      [P.second, 1000, "io", "à la seconde"],
+      [P.plie, 700, "io", "plié"],
+      [P.retire, 450, "out", "relevé"],
+      [turn(P.retire, 2), 1500, "spin", "pirouette"],
+      [turn(P.retire, 2), 250, "io"],
+      [turn(P.devel, 2), 1100, "io", "développé"],
+      [turn(P.devel, 2), 700, "io"],
+      [turn(P.arabesque, 2), 1200, "io", "arabesque"],
+      [turn(P.arabesque, 2), 1400, "io"],
+      [turn(P.glissade, 2), 800, "io", "glissade"],
+      [turn(P.jete, 2), 480, "out", "grand jeté", true],
+      [turn(P.land, 2), 480, "in", null, true],
+      [turn(P.sousSus, 2), 1000, "io", "sous-sus"],
+      [turn(P.sousSus, 2), 600, "io"],
+      [turn(P.reverence, 2), 1300, "io", "révérence"],
+      [turn(P.reverence, 2), 1200, "io"],
+    ];
+    const LOOP_MS = ROUTINE.reduce((s, r) => s + r[1], 0);
+    const LABELS = ROUTINE.filter((r) => r[3]).map((r) => r[3]);
+
+    const NUM_KEYS = ["t", "tb", "hd", "x", "lift", "air", "hw"];
+    const ARR_KEYS = ["aR", "aL", "lR", "lL"];
+    const cur = pose({});
+    function sample(ms) {
+      let t = ((ms % LOOP_MS) + LOOP_MS) % LOOP_MS, i = 0;
+      while (t > ROUTINE[i][1]) { t -= ROUTINE[i][1]; i++; }
+      const [to, dur, ease, , jump] = ROUTINE[i];
+      const from = ROUTINE[(i + ROUTINE.length - 1) % ROUTINE.length][0];
+      const k = t / dur, e = EASE[ease](k);
+      for (const key of NUM_KEYS) cur[key] = lerp(from[key], to[key], e);
+      if (jump) cur.x = lerp(from.x, to.x, k); // keep travelling through the apex
+      for (const key of ARR_KEYS) for (let j = 0; j < to[key].length; j++) cur[key][j] = lerp(from[key][j], to[key][j], e);
+      // turns: only the pirouette segment actually spins, everything else takes the short way
+      let d = to.spin - from.spin;
+      if (ease !== "spin") d -= Math.round(d);
+      cur.spin = from.spin + d * e;
+      let li = 0;
+      for (let j = 0; j <= i; j++) if (ROUTINE[j][3]) li = LABELS.indexOf(ROUTINE[j][3]);
+      return li;
+    }
+
+    /* ---------- Skeleton (dancer units, ≈ 8.6 tall) ---------- */
+    const dir = (a, b) => [Math.sin(a) * Math.cos(b), Math.cos(a) * Math.cos(b), Math.sin(b)];
+    const add = (p, d, s) => [p[0] + d[0] * s, p[1] + d[1] * s, p[2] + d[2] * s];
+    const mix = (p, q, k) => [lerp(p[0], q[0], k), lerp(p[1], q[1], k), lerp(p[2], q[2], k)];
+    const STAND = 3.86; // pelvis height above the floor, standing flat
+
+    function skeleton(p, time) {
+      const breathe = 0.02 * Math.sin(time / 1100);
+      const sway = 0.05 * Math.sin(time / 620);
+      const ta = p.t + breathe;
+      const pel = [0, 0, 0];
+      const up = dir(ta, p.tb);
+      const right = [-Math.cos(ta), Math.sin(ta), 0];
+      const neck = add(pel, up, 2.4);
+      const head = add(neck, dir(ta + p.hd, p.tb), 0.78);
+      const bun = add(head, dir(ta + p.hd, p.tb - 0.6), 0.48);
+      const shR = add(add(neck, right, 0.66 * p.hw), up, -0.2);
+      const shL = add(add(neck, right, -0.66 * p.hw), up, -0.2);
+      const arm = (sh, a, s) => { const el = add(sh, dir(a[0] + s, a[1]), 1.25); return [el, add(el, dir(a[2] + s * 1.4, a[3]), 1.15)]; };
+      const [elR, haR] = arm(shR, p.aR, sway);
+      const [elL, haL] = arm(shL, p.aL, -sway);
+      const hipR = add(pel, right, 0.34 * p.hw), hipL = add(pel, right, -0.34 * p.hw);
+      const leg = (hip, l) => {
+        const kn = add(hip, dir(l[0], l[1]), 1.95);
+        const an = add(kn, dir(l[2], l[3]), 1.85);
+        return [kn, an, add(an, dir(l[4], l[5]), 0.52)];
+      };
+      const [knR, anR, toR] = leg(hipR, p.lR);
+      const [knL, anL, toL] = leg(hipL, p.lL);
+      // grounded: lowest foot point touches the floor; airborne: fixed pelvis height
+      const ground = lerp(Math.max(anR[1], anL[1], toR[1], toL[1]), STAND, p.air);
+      return {
+        ground, pel, neck, head, bun,
+        waist: mix(pel, neck, 0.33), chest: mix(pel, neck, 0.78),
+        shR, shL, elR, elL, haR, haL, hipR, hipL, knR, knL, anR, anL, toR, toL,
+      };
+    }
+
+    /* Body parts: capsules between two joints [from, to, r0, r1], discs [center, r] */
+    const CAPS = [
+      ["pel", "waist", 0.42, 0.28], ["waist", "chest", 0.28, 0.46], ["chest", "neck", 0.4, 0.14],
+      ["shR", "elR", 0.13, 0.1], ["elR", "haR", 0.1, 0.06], ["shL", "elL", 0.13, 0.1], ["elL", "haL", 0.1, 0.06],
+      ["hipR", "knR", 0.26, 0.15], ["knR", "anR", 0.15, 0.08], ["anR", "toR", 0.08, 0.04],
+      ["hipL", "knL", 0.26, 0.15], ["knL", "anL", 0.15, 0.08], ["anL", "toL", 0.08, 0.04],
+      ["neck", "head", 0.11, 0.11],
+    ];
+    const DISCS = [["head", 0.47], ["bun", 0.19]];
+    const TUTU = { y: -0.1, R: 1.95, inner: 0.28 };
+    const PARTS = [
+      ...CAPS.map((c) => ({ kind: "cap", c, area: 2.1 * (c[2] + c[3]), glow: 0.85 })),
+      ...DISCS.map((d) => ({ kind: "disc", d, area: Math.PI * d[1] * d[1] * 1.3, glow: 0.95 })),
+      { kind: "tutu", area: 6.5, glow: 0.8 },
+    ];
+    // rough lengths for weighting: torso 2.4, limbs ~1.2–1.95
+    const LEN = { pel: 0.8, waist: 1.08, chest: 0.53, shR: 1.25, elR: 1.15, shL: 1.25, elL: 1.15, hipR: 1.95, knR: 1.85, anR: 0.52, hipL: 1.95, knL: 1.85, anL: 0.52, neck: 0.4 };
+    for (const part of PARTS) if (part.kind === "cap") part.area *= LEN[part.c[0]];
+
+    /* ---------- Build: grid + assign every dot a place ---------- */
+    function build() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      w = innerWidth; h = innerHeight;
+      canvas.width = w * dpr; canvas.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      dots = [];
+      const offX = (w % GAP) / 2, offY = (h % GAP) / 2;
+      for (let y = offY; y <= h; y += GAP)
+        for (let x = offX; x <= w; x += GAP)
+          dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random(), t: null });
+
+      const cx = stage.cx = w / 2, cy = stage.cy = h / 2;
+      const R = stage.R = Math.min(w, h) * 0.4;
+      stage.U = (R * 0.86 * 2 * 0.86) / 8.8;
+      stage.floor = cy + 4.35 * stage.U;
+
+      const ring = sampleShape((c) => {
+        c.lineWidth = Math.max(2.5, R * 0.018);
+        c.beginPath(); c.arc(cx, cy, R, 0, TAU); c.stroke();
+        c.lineWidth = Math.max(1.5, R * 0.01);
+        c.beginPath(); c.arc(cx, cy, R * 0.86, 0, TAU); c.stroke();
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * TAU, long = i % 3 === 0;
+          const r1 = R * 0.87, r2 = R * (long ? 0.99 : 0.93);
+          c.beginPath();
+          c.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+          c.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
+          c.stroke();
+        }
+      }, 3);
+
+      const pool = shuffle(dots.slice());
+      const n = Math.floor(pool.length * 0.86);
+      const nRing = Math.min(ring.length, Math.floor(n * 0.32));
+      const nFig = n - nRing;
+      shuffle(ring);
+      let k = 0;
+      for (let i = 0; i < nRing; i++, k++) {
+        const p = ring[i];
+        pool[k].t = { kind: "ring", r: Math.hypot(p.x - cx, p.y - cy), a: Math.atan2(p.y - cy, p.x - cx), glow: 0.7 };
+      }
+      const total = PARTS.reduce((s, p) => s + p.area, 0);
+      for (const part of PARTS) {
+        const cnt = Math.max(4, Math.round((part.area / total) * nFig));
+        for (let i = 0; i < cnt && k < pool.length; i++, k++) {
+          const q = (i + 0.5) / cnt;
+          const t = { kind: part.kind, part, glow: part.glow };
+          if (part.kind === "cap") {
+            t.u = (i + Math.random()) / cnt;
+            t.v = Math.random() < 0.4 ? (Math.random() < 0.5 ? -1 : 1) : Math.random() * 2 - 1;
+          } else if (part.kind === "disc") {
+            t.s = Math.sqrt(q); t.phi = i * 2.39996;
+          } else {
+            const rim = i % 5 === 0;
+            t.rho = rim ? 1 : Math.sqrt(TUTU.inner ** 2 + (1 - TUTU.inner ** 2) * q);
+            t.phi = i * 2.39996;
+          }
+          pool[k].t = t;
+        }
+      }
+      for (; k < pool.length; k++) pool[k].t = null;
+    }
+
+    /* ---------- Per frame: project the skeleton, then place each dot ---------- */
+    let S = null, proj = {};
+    const cam = { c: 1, s: 0 };
+    const PITCH = 0.3; // camera sits slightly above: nearer points drop a little
+
+    function toScreen(p) {
+      const x = p[0] * cam.c - p[2] * cam.s;
+      const z = p[0] * cam.s + p[2] * cam.c;
+      const U = stage.U;
+      return [
+        stage.cx + (x + cur.x) * U,
+        stage.floor + (p[1] - S.ground - cur.lift) * U + z * PITCH * U,
+        z,
+      ];
+    }
+
+    function pose3d(time) {
+      S = skeleton(cur, time);
+      const th = cur.spin * TAU;
+      cam.c = Math.cos(th); cam.s = Math.sin(th);
+      proj = {};
+      for (const key in S) if (key !== "ground") proj[key] = toScreen(S[key]);
+    }
+
+    function target(t, time, spinA) {
+      const U = stage.U;
+      switch (t.kind) {
+        case "ring":
+          return [stage.cx + Math.cos(t.a + spinA) * t.r, stage.cy + Math.sin(t.a + spinA) * t.r, 0];
+        case "cap": {
+          const [fa, fb, r0, r1] = t.part.c;
+          const A = proj[fa], B = proj[fb];
+          const dx = B[0] - A[0], dy = B[1] - A[1];
+          const len = Math.hypot(dx, dy) || 1;
+          const r = lerp(r0, r1, t.u) * U * t.v;
+          return [A[0] + dx * t.u - (dy / len) * r, A[1] + dy * t.u + (dx / len) * r, lerp(A[2], B[2], t.u)];
+        }
+        case "disc": {
+          const [c, rr] = t.part.d;
+          const C = proj[c], r = rr * U * t.s;
+          return [C[0] + Math.cos(t.phi) * r, C[1] + Math.sin(t.phi) * r, C[2] + 0.2];
+        }
+        case "tutu": {
+          const rr = t.rho * TUTU.R;
+          const ruffle = 0.07 * t.rho * Math.sin(t.phi * 8 + time / 260);
+          return toScreen([S.pel[0] + Math.cos(t.phi) * rr, S.pel[1] + TUTU.y + 0.12 * t.rho * t.rho + ruffle, S.pel[2] + Math.sin(t.phi) * rr]);
+        }
+      }
+    }
+
+    let lastLabel = -1;
+    function setLabel(i) {
+      if (i === lastLabel) return;
+      lastLabel = i;
+      stepName.classList.add("is-out");
+      setTimeout(() => {
+        stepName.textContent = LABELS[i];
+        stepCount.textContent = String(i + 1).padStart(2, "0");
+        stepName.classList.remove("is-out");
+      }, 220);
+    }
+
+    function frame(time) {
+      // gather into the figure shortly after load (like the idle sigil, just quicker)
+      const since = time - form.start;
+      form.k = since > 700 ? Math.min(1, form.k + 1 / 170) : 0;
+      const ie = form.k * form.k * (3 - 2 * form.k);
+      const dance = Math.max(0, since - 2600);
+      setLabel(sample(dance));
+      pose3d(time);
+      const spinA = time * 0.00006;
+
+      pointer.x += (pointer.tx - pointer.x) * 0.18;
+      pointer.y += (pointer.ty - pointer.y) * 0.18;
+      const push = pointer.active && time - pointer.lastMove < 4000;
+      const maxR = Math.max(w, h);
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        ripples[i].r += 9;
+        if (ripples[i].r > maxR) ripples.splice(i, 1);
+      }
+      document.documentElement.classList.toggle("is-calm", !push && ie > 0.9);
+
+      ctx.clearRect(0, 0, w, h);
+      for (const d of dots) {
+        let fx = 0, fy = 0, glowT = 0;
+        if (push) {
+          const dx = d.x - pointer.x, dy = d.y - pointer.y, dist = Math.hypot(dx, dy);
+          if (dist < RADIUS) {
+            const f = 1 - dist / RADIUS, ease = f * f * (1 - 0.6 * ie);
+            fx += (dx / (dist || 1)) * PUSH * ease;
+            fy += (dy / (dist || 1)) * PUSH * ease;
+            glowT = ease;
+          }
+        }
+        for (const r of ripples) {
+          const rd = Math.hypot(d.ox - r.x, d.oy - r.y), band = Math.abs(rd - r.r);
+          if (band < 40) {
+            const k = (1 - band / 40) * (1 - r.r / maxR);
+            fx += ((d.ox - r.x) / (rd || 1)) * 14 * k;
+            fy += ((d.oy - r.y) / (rd || 1)) * 14 * k;
+            glowT = Math.max(glowT, k);
+          }
+        }
+
+        let bx = d.ox, by = d.oy, depth = 0;
+        if (ie > 0 && d.t) {
+          const p = target(d.t, time, spinA);
+          const e = Math.min(1, Math.max(0, ie * 1.6 - d.seed * 0.6)); // staggered departure
+          bx += (p[0] - d.ox) * e; by += (p[1] - d.oy) * e;
+          depth = p[2] * e;
+          glowT = Math.max(glowT, e * d.t.glow);
+        }
+        const hx = bx + fx, hy = by + fy;
+        const stiff = d.t && d.t.kind !== "ring" ? 0.16 : 0.12;
+        d.vx = (d.vx + (hx - d.x) * stiff) * 0.76;
+        d.vy = (d.vy + (hy - d.y) * stiff) * 0.76;
+        d.x += d.vx; d.y += d.vy;
+        d.glow += (glowT - d.glow) * 0.15;
+
+        const tw = 0.13 + 0.06 * Math.sin(time / 900 + d.seed * 40);
+        let a = Math.min(1, tw + d.glow * 0.85);
+        if (ie > 0 && !d.t) a *= 1 - 0.8 * ie;
+        a *= clamp(1 + depth * 0.22, 0.45, 1.15);                      // parts turned away fade
+        const size = 1.4 + d.glow * 1.6;
+        const tutu = d.t && d.t.kind === "tutu";
+        ctx.fillStyle = d.glow > 0.05
+          ? tutu
+            ? `rgba(${(200 - 20 * d.glow) | 0}, ${(170 + 10 * d.glow) | 0}, 255, ${Math.min(1, a)})`
+            : `rgba(${(183 - 90 * d.glow) | 0}, ${(166 + 60 * d.glow) | 0}, 255, ${Math.min(1, a)})`
+          : `rgba(210, 200, 255, ${a})`;
+        ctx.fillRect(d.x - size / 2, d.y - size / 2, size, size);
+      }
+      rafId = requestAnimationFrame(frame);
+    }
+
+    /* Reduced motion: one still arabesque, no swarm */
+    function drawStatic() {
+      ctx.clearRect(0, 0, w, h);
+      Object.assign(cur, P.arabesque, { aR: P.arabesque.aR.slice(), aL: P.arabesque.aL.slice(), lR: P.arabesque.lR.slice(), lL: P.arabesque.lL.slice() });
+      pose3d(0);
+      for (const d of dots) {
+        if (!d.t) { ctx.fillStyle = "rgba(210, 200, 255, 0.1)"; ctx.fillRect(d.ox - 0.7, d.oy - 0.7, 1.4, 1.4); continue; }
+        const p = target(d.t, 0, 0);
+        ctx.fillStyle = `rgba(${(183 - 90 * d.t.glow) | 0}, ${(166 + 60 * d.t.glow) | 0}, 255, 0.85)`;
+        ctx.fillRect(p[0] - 1.2, p[1] - 1.2, 2.4, 2.4);
+      }
+      stepName.textContent = "arabesque";
+      stepCount.textContent = "08";
+    }
+
+    function start() {
+      stop();
+      build();
+      if (reduceMotion.matches) { drawStatic(); return; }
+      rafId = requestAnimationFrame(frame);
+    }
+    function stop() { if (rafId) cancelAnimationFrame(rafId); rafId = null; }
+
+    addEventListener("pointermove", (e) => {
+      pointer.tx = e.clientX; pointer.ty = e.clientY;
+      if (!pointer.active) { pointer.x = e.clientX; pointer.y = e.clientY; }
+      pointer.active = true; pointer.lastMove = performance.now();
+    }, { passive: true });
+    document.documentElement.addEventListener("pointerleave", () => { pointer.active = false; });
+    addEventListener("pointerdown", (e) => {
+      if (reduceMotion.matches) return;
+      ripples.push({ x: e.clientX, y: e.clientY, r: 0 });
+    }, { passive: true });
+    addEventListener("keydown", (e) => { if (e.key === "Escape") location.href = "./"; });
+
+    let resizeTimer = null;
+    addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(start, 120); });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else start(); });
+    reduceMotion.addEventListener?.("change", start);
+
+    start();
+
+    /* ---------- Music ----------
+       Same mute setting as the home page ("reez:muted"). Browsers may block
+       autoplay; then the first click / key press anywhere starts it.      */
+    const music = document.getElementById("music");
+    const soundBtn = document.getElementById("sound");
+    const soundHint = document.getElementById("sound-hint");
+    const store = {
+      get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+      set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
+    };
+    let muted = store.get("reez:muted") === "1";
+    music.volume = 0.4;
+    const syncSound = () => {
+      soundBtn.setAttribute("aria-pressed", String(muted));
+      soundBtn.setAttribute("aria-label", muted ? "Unmute music" : "Mute music");
+      document.documentElement.classList.toggle("is-playing", !music.paused && !muted);
+      soundHint.hidden = muted || !music.paused;
+    };
+    const playMusic = () => {
+      if (muted) return syncSound();
+      music.muted = false;
+      music.play().then(syncSound, syncSound);
+    };
+    ["play", "pause"].forEach((ev) => music.addEventListener(ev, syncSound));
+    soundBtn.addEventListener("click", () => {
+      muted = music.paused && !muted ? false : !muted;
+      store.set("reez:muted", muted ? "1" : "0");
+      if (muted) music.pause(); else playMusic();
+      syncSound();
+    });
+    const unlock = (e) => {
+      if (e.target.closest && e.target.closest("#sound")) return;
+      if (music.paused) playMusic();
+    };
+    addEventListener("pointerdown", unlock, { passive: true });
+    addEventListener("keydown", unlock);
+    playMusic();
+  </script>
+</body>
+</html>
