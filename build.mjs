@@ -35,7 +35,7 @@ const log = (f, a, b) => console.log(`${f.padEnd(12)} ${kb(a).padStart(9)} -> ${
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
 
-for (const f of ["index.html", "404.html"]) {
+for (const f of ["index.html", "404.html", "ballet.html", "breakdance.html"]) {
   const src = readFileSync(f, "utf8");
   const out = await html(src, HTML_OPTS);
   writeFileSync(`${OUT}/${f}`, out); log(f, src, out);
