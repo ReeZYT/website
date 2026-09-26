@@ -26,6 +26,11 @@ const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } },
 };
+// per tab: "already clicked through the splash"
+const sessionStore = {
+  get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch { /* ignore */ } },
+};
 
 $("year").textContent = new Date().getFullYear();
 
@@ -180,7 +185,7 @@ let entered = false;
 let muted = store.get("reez:muted") === "1";
 
 // Analyser feeds the background + dock equalizer
-let analyser = null, freq = null;
+let analyser = null, freq = null, audioCtx = null;
 const level = { bass: 0, avg: 0, kick: 0, lastKick: 0 };
 const eqBars = [...$("eq").children];
 
@@ -198,7 +203,7 @@ function initAnalyser() {
   // file:// media counts as cross-origin -> an analyser would output silence
   if (analyser || !CONFIG.reactive || !location.protocol.startsWith("http")) return;
   try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const ac = audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = ac.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.55;
@@ -216,14 +221,29 @@ function startSound() {
   if (!audioOk || !entered) return;
   initAnalyser();
   applyMute();
-  if (!muted) audio.play().catch(() => {});
-  $("track-name").textContent = CONFIG.trackName;
+  if (!muted) activeAudio().play().catch(armUnlock);
+  $("track-name").textContent = party.on ? "oiia oiia (reez party mix)" : CONFIG.trackName;
   if (dock.hidden) {
     dock.hidden = false;
     requestAnimationFrame(() => dock.classList.add("is-in"));
   }
 }
 audio.addEventListener("canplay", () => { audioOk = true; startSound(); }, { once: true });
+
+// Coming back without the splash (see below), the browser may still block
+// autoplay: then the first click / key press anywhere starts the music.
+let unlockArmed = false;
+function armUnlock() {
+  if (unlockArmed) return;
+  unlockArmed = true;
+  const go = () => {
+    unlockArmed = false;
+    ["pointerdown", "keydown"].forEach((ev) => window.removeEventListener(ev, go, true));
+    audioCtx?.resume();
+    if (!muted && activeAudio().paused) activeAudio().play().catch(() => {});
+  };
+  ["pointerdown", "keydown"].forEach((ev) => window.addEventListener(ev, go, true));
+}
 
 muteBtn.addEventListener("click", () => {
   muted = !muted;
@@ -247,6 +267,7 @@ function startVideo() {
 function enter() {
   if (entered) return;
   entered = true;
+  sessionStore.set("reez:entered", "1");
   document.removeEventListener("keydown", onSplashKey);
   splash.classList.add("is-out");
   setTimeout(() => { splash.hidden = true; }, 650);
@@ -257,6 +278,11 @@ function enter() {
   if (!reduceMotion.matches) scrambleName();
   startSound();
   startVideo();
+  // reez.cc/#oiia (e.g. typed "oiia" on the 404 page) lands straight in the party
+  if (location.hash === "#oiia") {
+    history.replaceState(null, "", location.pathname + location.search);
+    setTimeout(partyOn, reduceMotion.matches ? 0 : 450);
+  }
 }
 function onSplashKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey || e.key === "Tab") return;
@@ -264,11 +290,18 @@ function onSplashKey(e) {
   enter();
 }
 
-splash.hidden = false;
-mainEl.inert = true;
 $("enter-btn").addEventListener("click", enter);
-document.addEventListener("keydown", onSplashKey);
-$("enter-btn").focus({ preventScroll: true, focusVisible: false });
+// Already clicked through in this tab (or came from /ballet, /breakdance):
+// no splash again, the page opens right away.
+if (sessionStore.get("reez:entered") === "1") {
+  splash.hidden = true;
+  setTimeout(enter); // after the rest of the script has run
+} else {
+  splash.hidden = false;
+  mainEl.inert = true;
+  document.addEventListener("keydown", onSplashKey);
+  $("enter-btn").focus({ preventScroll: true, focusVisible: false });
+}
 
 // Called every animation frame by the background
 function readAudio(t) {
@@ -442,91 +475,9 @@ function build() {
   const offX = (w % GAP) / 2, offY = (h % GAP) / 2;
   for (let y = offY; y <= h; y += GAP) {
     for (let x = offX; x <= w; x += GAP) {
-      dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random(), t: null });
+      dots.push({ ox: x, oy: y, x, y, vx: 0, vy: 0, glow: 0, seed: Math.random() });
     }
   }
-  buildSigil();
-}
-
-/* ---------- Idle sigil ----------
-   After IDLE_MS without input the page fades out and the dots swarm into
-   a ring of runes around "reez". Any input dissolves it again.        */
-const IDLE_MS = 15_000;
-const idle = { last: performance.now(), k: 0, on: false };
-const sigil = { cx: 0, cy: 0 };
-
-function sampleShape(draw, step) {
-  const oc = document.createElement("canvas");
-  oc.width = w; oc.height = h;
-  const c = oc.getContext("2d");
-  c.fillStyle = c.strokeStyle = "#fff";
-  draw(c);
-  const img = c.getImageData(0, 0, w, h).data;
-  const pts = [];
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      if (img[(y * w + x) * 4 + 3] > 120) pts.push({ x, y });
-    }
-  }
-  return pts;
-}
-const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
-
-function buildSigil() {
-  const cx = sigil.cx = w / 2, cy = sigil.cy = h / 2;
-  const R = Math.min(w, h) * 0.38;
-  const ring = sampleShape((c) => {
-    c.lineWidth = Math.max(2.5, R * 0.018);
-    c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.stroke();
-    c.lineWidth = Math.max(1.5, R * 0.01);
-    c.beginPath(); c.arc(cx, cy, R * 0.86, 0, Math.PI * 2); c.stroke();
-    // rune ticks between the two rings
-    for (let i = 0; i < 24; i++) {
-      const a = (i / 24) * Math.PI * 2, long = i % 3 === 0;
-      const r1 = R * 0.87, r2 = R * (long ? 0.99 : 0.93);
-      c.beginPath();
-      c.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-      c.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2);
-      c.stroke();
-    }
-  }, 3);
-  const word = sampleShape((c) => {
-    c.font = `800 ${Math.round(R * 0.5)}px ${getComputedStyle(document.body).fontFamily}`;
-    c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText("reez", cx, cy);
-  }, 3);
-
-  const pool = shuffle(dots.slice());
-  const n = Math.floor(pool.length * 0.8);
-  const nRing = Math.min(ring.length, Math.floor(n * 0.45));
-  const nWord = Math.min(word.length, n - nRing);
-  shuffle(ring); shuffle(word);
-  for (const d of dots) d.t = null;
-  for (let i = 0; i < nRing; i++) {
-    const p = ring[i];
-    pool[i].t = { r: Math.hypot(p.x - cx, p.y - cy), a: Math.atan2(p.y - cy, p.x - cx), spin: true };
-  }
-  for (let i = 0; i < nWord; i++) {
-    const p = word[i];
-    pool[nRing + i].t = { x: p.x, y: p.y, spin: false };
-  }
-}
-
-function markActive() {
-  idle.last = performance.now();
-}
-["pointermove", "pointerdown", "keydown", "wheel", "touchstart"].forEach((ev) =>
-  window.addEventListener(ev, markActive, { passive: true }));
-
-function updateIdle(t) {
-  const want = entered && !party.on && !document.hidden && performance.now() - idle.last > IDLE_MS;
-  idle.k = want ? Math.min(1, idle.k + 1 / 260) : Math.max(0, idle.k - 1 / 22);
-  if (want !== idle.on) {
-    idle.on = want;
-    document.documentElement.classList.toggle("is-idle", want);
-  }
-  const k = idle.k;
-  return k * k * (3 - 2 * k); // smoothstep
 }
 
 function drawStatic() {
@@ -538,8 +489,6 @@ function drawStatic() {
 function frame(t) {
   readAudio(t);
   partyFrame(t);
-  const ie = updateIdle(t);
-  const spinA = t * 0.00006;
   const R = RADIUS * (1 + 0.35 * level.bass);
   // Wander when the pointer is idle (touch devices, or mouse left the window)
   if (!pointer.active || t - pointer.lastMove > 4000) {
@@ -566,11 +515,11 @@ function frame(t) {
 
     if (dist < R) {
       const f = 1 - dist / R;
-      const ease = f * f * (1 - ie);
+      const ease = f * f;
       fx += (dx / (dist || 1)) * PUSH * ease;
       fy += (dy / (dist || 1)) * PUSH * ease;
       target = ease;
-      if (f > 0.55 && ie < 0.05) near.push(d);
+      if (f > 0.55) near.push(d);
     }
 
     for (const r of ripples) {
@@ -584,18 +533,8 @@ function frame(t) {
       }
     }
 
-    // home = grid point, or (while idle) the dot's place in the sigil
-    let bx = d.ox, by = d.oy;
-    if (ie > 0 && d.t) {
-      const tx = d.t.spin ? sigil.cx + Math.cos(d.t.a + spinA) * d.t.r : d.t.x;
-      const ty = d.t.spin ? sigil.cy + Math.sin(d.t.a + spinA) * d.t.r : d.t.y;
-      // stagger: each dot leaves at a slightly different moment
-      const e = Math.min(1, Math.max(0, ie * 1.6 - d.seed * 0.6));
-      bx += (tx - d.ox) * e; by += (ty - d.oy) * e;
-      target = Math.max(target, e * 0.75);
-    }
     // spring toward the displaced home position
-    const hx = bx + fx, hy = by + fy;
+    const hx = d.ox + fx, hy = d.oy + fy;
     d.vx = (d.vx + (hx - d.x) * 0.12) * 0.78;
     d.vy = (d.vy + (hy - d.y) * 0.12) * 0.78;
     d.x += d.vx; d.y += d.vy;
@@ -603,8 +542,7 @@ function frame(t) {
 
     // faint twinkle so the grid never looks frozen
     const tw = 0.13 + 0.06 * Math.sin(t / 900 + d.seed * 40) + 0.1 * level.kick;
-    let a = Math.min(1, tw + d.glow * 0.85);
-    if (ie > 0 && !d.t) a *= 1 - 0.8 * ie;
+    const a = Math.min(1, tw + d.glow * 0.85);
     const size = 1.4 + d.glow * 1.6;
     if (party.on) {
       const hue = (party.hue + d.ox * 0.25 + d.oy * 0.15 + d.glow * 90) % 360;
@@ -773,7 +711,7 @@ function partyOn() {
   audio.pause();
   applyMute(); // same saved "reez:muted" setting as the normal track
   partyAudio.currentTime = 0;
-  partyAudio.play().catch(() => {});
+  if (!muted) partyAudio.play().catch(armUnlock);
   $("track-name").textContent = "oiia oiia (reez party mix)";
   partyExit.hidden = false;
   if (dock.hidden) { dock.hidden = false; requestAnimationFrame(() => dock.classList.add("is-in")); }
@@ -793,7 +731,7 @@ function partyOff() {
   profileEl.style.transform = "";
   mainEl.style.removeProperty("--shake-x"); mainEl.style.removeProperty("--shake-y");
   partyAudio.pause();
-  if (!muted) audio.play().catch(() => {});
+  if (!muted) audio.play().catch(armUnlock);
   $("track-name").textContent = CONFIG.trackName;
   partyExit.hidden = true;
   nameTarget = "reez";
@@ -829,7 +767,7 @@ document.querySelector(".avatar").addEventListener("pointerdown", () => {
 
 // Clicking during the party throws more cats
 window.addEventListener("pointerdown", (e) => {
-  if (!party.on || e.target.closest(".dock, .avatar")) return;
+  if (!party.on || e.target.closest(".dock, .avatar, .con")) return;
   for (let i = 0; i < 3; i++) spawnCat(e.clientX, e.clientY, true);
 });
 
@@ -938,8 +876,10 @@ document.addEventListener("visibilitychange", () => {
     document.title = TITLES.away;
     return;
   }
-  markActive();
   if (!entered || reduceMotion.matches || performance.now() - hiddenAt < 2500) return;
+  signalLost();
+});
+function signalLost() {
   signal.hidden = false;
   document.documentElement.classList.add("is-glitching");
   setTimeout(() => {
@@ -947,11 +887,267 @@ document.addEventListener("visibilitychange", () => {
     document.documentElement.classList.remove("is-glitching");
     glitch();
   }, 750);
+}
+
+/* ============================================================
+   Developer console (Source-engine style)
+   Open: ^ / ` / ~ (the key left of 1), or long-press the clock.
+   `help` lists every command AND every easter egg with its
+   triggers. EGGS is the single list – add new eggs there.
+   ============================================================ */
+const con = $("con");
+const conOut = $("con-out");
+const conIn = $("con-in");
+const conState = { hist: [], pos: 0, back: null, fresh: false, greeted: false };
+
+const EGGS = [
+  { name: "developer console", trigger: ["press ^ / ` / ~ (key left of 1)", "long-press the clock"], exit: ["Esc", "same key again", "exit"] },
+  { name: "party mode (oiia)", cmd: "party", trigger: ['type "oiia" on any page', "home: tap the avatar 5× quickly", "ballet / breakdance: tap the screen 5× quickly", "oiia() in the DevTools console"], exit: ["Esc", "✕ in the dock / the ✕ o i i a pill", "same trigger again"], note: "ballet + breakdance get their own mix · click during the party to throw cats" },
+  { name: "ballet", cmd: "ballet", trigger: ['type "ballet" on any page', 'click the "." in the footer (reez.cc)'], exit: ["Esc", "reez.cc button"] },
+  { name: "breakdance", cmd: "breakdance", trigger: ['type "break" on any page', 'click the "©" in the footer'], exit: ["Esc", "reez.cc button"] },
+];
+
+const CON_FILES = {
+  "aimbot.dll": "cat: aimbot.dll: binary file (undetected since 2026)",
+  "oiia.exe": "o i i a o i i a · run it with: party",
+  "ballet.html": "<html>… a ballerina made of dots · open it with: ballet",
+  "breakdance.html": "<html>… windmill, headspin, freeze · open it with: breakdance",
+  "secrets.txt": "there are no secrets here. try: help",
+  "forum.lock": `AES-256-GCM · PBKDF2-SHA256 · ${CONFIG.gate?.i ?? "?"} rounds. good luck.`,
+};
+
+/* ---------- output ---------- */
+function conSpan(text, cls) {
+  const s = document.createElement("span");
+  if (cls) s.className = "c-" + cls;
+  s.textContent = text;
+  return s;
+}
+function conScroll() { conOut.scrollTop = conOut.scrollHeight; }
+// say("plain", ["colored", "hl"], …) – always textContent, never HTML
+function say(...parts) {
+  const row = document.createElement("div");
+  row.className = "con__row";
+  for (const p of parts) row.append(Array.isArray(p) ? conSpan(p[0], p[1]) : conSpan(p));
+  conOut.append(row);
+  conScroll();
+}
+function sayGrid(rows, cls = "con__grid") {
+  const g = document.createElement("div");
+  g.className = cls;
+  for (const [l, r, c = "hl"] of rows) g.append(conSpan(l, c), conSpan(r));
+  conOut.append(g);
+  conScroll();
+}
+
+function sayEggs() {
+  say([`EASTER EGGS · ${EGGS.length}`, "head"]);
+  for (const egg of EGGS) {
+    say(["● ", "dim"], [egg.name, "egg"], ...(egg.cmd ? [["  → ", "dim"], [egg.cmd, "hl"]] : []));
+    const rows = [["trigger", egg.trigger.join(" · "), "dim"]];
+    if (egg.exit) rows.push(["exit", egg.exit.join(" · "), "dim"]);
+    if (egg.note) rows.push(["note", egg.note, "dim"]);
+    sayGrid(rows, "con__grid con__grid--egg");
+  }
+}
+
+/* ---------- commands ---------- */
+// Close the console first so the effect is visible, then run it
+const conLater = (fn, ms = 320) => { closeConsole(); setTimeout(fn, reduceMotion.matches ? 0 : ms); };
+const linkHref = (part) => document.querySelector(`.links a[href*="${part}"]`)?.href;
+const CMDS = [
+  { group: "console", name: "help", desc: "this list: every command + every easter egg", run: () => sayHelp() },
+  { group: "console", name: "eggs", desc: "easter eggs only: triggers, exit, command", run: () => sayEggs() },
+  { group: "console", name: "clear", alias: ["cls"], desc: "clear the output", run: () => { conOut.replaceChildren(); } },
+  { group: "console", name: "history", desc: "what you typed this session", run: () => {
+    if (!conState.hist.length) return "nothing yet.";
+    conState.hist.forEach((h, i) => say([String(i + 1).padStart(3) + "  ", "dim"], h));
+  } },
+  { group: "console", name: "echo", args: "<text>", desc: "print text", run: (_, rest) => rest || " " },
+  { group: "console", name: "exit", alias: ["quit", "close"], desc: "close the console (also Esc or ^)", run: () => closeConsole() },
+
+  { group: "eggs", name: "party", alias: ["oiia"], desc: "toggle party mode", run: () => {
+    conLater(togglePartyMode, 200);
+    return party.on ? "party off." : "o i i a o i i a";
+  } },
+  { group: "eggs", name: "ballet", desc: "open /ballet", run: () => { location.href = "ballet.html"; return "loading ballet.html…"; } },
+  { group: "eggs", name: "breakdance", alias: ["break"], desc: "open /breakdance", run: () => { location.href = "breakdance.html"; return "loading breakdance.html…"; } },
+  { group: "site", name: "forum", args: "[status]", desc: "focus the key field · status: attempts + cooldown", run: (args) => {
+    if (args[0] === "status") {
+      const st = lockState();
+      const left = Math.max(0, Math.ceil((st.until - Date.now()) / 1000));
+      sayGrid([
+        ["failed attempts", String(st.fails), "dim"],
+        ["cooldown", left ? `${left} s` : "none", "dim"],
+        ["cipher", `AES-256-GCM · PBKDF2-SHA256 · ${CONFIG.gate?.i ?? "?"} rounds`, "dim"],
+      ]);
+      return;
+    }
+    conLater(() => gateKey.focus(), 0);
+  } },
+
+  { group: "site", name: "whoami", desc: "who's behind this", run: () => "reez · Lukas · he/him · Düsseldorf, DE · Software Engineer" },
+  { group: "site", name: "ls", desc: "list files", run: () => say(...Object.keys(CON_FILES).map((f) => [f + "   ", f.endsWith(".txt") ? "ok" : "hl"])) },
+  { group: "site", name: "cat", args: "<file>", desc: "print a file", run: ([f]) => {
+    if (!f) return "usage: cat <file>  (try ls)";
+    return CON_FILES[f] ?? [`cat: ${f}: No such file or directory`, "err"];
+  } },
+  { group: "site", name: "time", alias: ["date"], desc: "local time here and for you", run: () => {
+    const fmt = (tz) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, dateStyle: "medium", timeStyle: "medium" }).format(new Date());
+    sayGrid([["reez", `${fmt(CONFIG.timezone)} (${CONFIG.timezone})`, "dim"], ["you", fmt(undefined), "dim"]]);
+  } },
+  { group: "site", name: "mute", desc: "mute the music", run: () => { if (!muted) muteBtn.click(); return "muted."; } },
+  { group: "site", name: "unmute", desc: "unmute the music", run: () => { if (muted) muteBtn.click(); return "unmuted."; } },
+  { group: "site", name: "volume", args: "[0-100]", desc: "show or set the volume", run: ([v]) => {
+    if (v == null) return `volume ${Math.round(audio.volume * 100)}`;
+    const n = Number(v);
+    if (!(n >= 0 && n <= 100)) return ["usage: volume 0-100", "err"];
+    audio.volume = n / 100;
+    partyAudio.volume = Math.min(1, (n / 100) * 1.3);
+    return `volume ${Math.round(n)}`;
+  } },
+  { group: "site", name: "steam", desc: "open the Steam profile", run: () => { window.open(linkHref("steamcommunity"), "_blank", "noopener"); return "opening steam…"; } },
+  { group: "site", name: "spotify", desc: "open the Spotify profile", run: () => { window.open(linkHref("spotify"), "_blank", "noopener"); return "opening spotify…"; } },
+  { group: "site", name: "discord", desc: "copy the Discord handle", run: () => { discordBtn.click(); return `copied: ${discordBtn.dataset.copy}`; } },
+
+];
+const CMD = new Map();
+for (const c of CMDS) for (const n of [c.name, ...(c.alias ?? [])]) CMD.set(n, c);
+
+function sayHelp() {
+  const groups = [["console", "CONSOLE"], ["eggs", "EASTER EGG SHORTCUTS"], ["site", "SITE"]];
+  for (const [g, title] of groups) {
+    say([title, "head"]);
+    sayGrid(CMDS.filter((c) => c.group === g).map((c) => [
+      c.name + (c.args ? " " + c.args : ""),
+      c.desc + (c.alias ? `  (also: ${c.alias.join(", ")})` : ""),
+    ]));
+    say("");
+  }
+  sayEggs();
+}
+
+function runLine(line) {
+  const raw = line.trim();
+  say(["] ", "dim"], [raw, "in"]);
+  if (!raw) return;
+  if (conState.hist.at(-1) !== raw) conState.hist.push(raw);
+  conState.pos = conState.hist.length;
+  const name = raw.split(/\s+/)[0];
+  const args = raw.split(/\s+/).slice(1);
+  const c = CMD.get(name.toLowerCase());
+  if (!c) { say([`Unknown command "${name}". Type `, "err"], ["help", "hl"], [" for a list.", "err"]); return; }
+  try {
+    const r = c.run(args, raw.slice(name.length).trim());
+    if (r != null) say(r);
+  } catch { say(["something broke. very undetected.", "err"]); }
+}
+
+/* ---------- open / close ---------- */
+const conIsOpen = () => con.classList.contains("is-open");
+
+function openConsole(viaDeadKey = false) {
+  if (!entered || conIsOpen()) return;
+  conState.back = document.activeElement;
+  conState.fresh = viaDeadKey;
+  con.hidden = false;
+  document.documentElement.classList.add("is-console");
+  requestAnimationFrame(() => con.classList.add("is-open"));
+  if (!conState.greeted) {
+    conState.greeted = true;
+    say(["reez.cc developer console", "head"]);
+    say(["type ", "dim"], ["help", "hl"], [" for every command and every easter egg.", "dim"]);
+  }
+  conIn.focus({ preventScroll: true });
+}
+function closeConsole() {
+  if (!conIsOpen()) return;
+  con.classList.remove("is-open");
+  document.documentElement.classList.remove("is-console");
+  conIn.blur();
+  setTimeout(() => { if (!conIsOpen()) con.hidden = true; }, reduceMotion.matches ? 0 : 300);
+  const back = conState.back;
+  if (back?.isConnected && back.matches("a, button, input")) back.focus({ preventScroll: true });
+}
+
+// The key left of 1: ` or ~ (US), ^ (DE, often a dead key), ° with shift
+const isConsoleKey = (e) =>
+  (e.key.length === 1 && "`~^°".includes(e.key)) ||
+  (e.key === "Dead" && (e.code === "Backquote" || e.code === "IntlBackslash"));
+
+document.addEventListener("keydown", (e) => {
+  if (!entered || e.metaKey || e.ctrlKey || e.altKey || !isConsoleKey(e)) return;
+  if (e.target.closest("input, textarea")) return; // the console input handles its own keys
+  e.preventDefault();
+  conIsOpen() ? closeConsole() : openConsole(e.key === "Dead");
 });
 
+conIn.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || (isConsoleKey(e) && !e.metaKey && !e.ctrlKey && !e.altKey)) {
+    e.preventDefault(); e.stopPropagation(); // don't let Esc also end the party
+    closeConsole();
+    return;
+  }
+  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    const h = conState.hist;
+    if (!h.length) return;
+    e.preventDefault();
+    conState.pos = Math.max(0, Math.min(h.length, conState.pos + (e.key === "ArrowUp" ? -1 : 1)));
+    conIn.value = h[conState.pos] ?? "";
+    requestAnimationFrame(() => conIn.setSelectionRange(conIn.value.length, conIn.value.length));
+    return;
+  }
+  if (e.key === "Tab" && !e.shiftKey) {
+    const v = conIn.value.trimStart().toLowerCase();
+    if (!v || v.includes(" ")) return; // nothing to complete: Tab moves focus as usual
+    const hits = [...CMD.keys()].filter((k) => k.startsWith(v)).sort();
+    if (!hits.length) return;
+    e.preventDefault();
+    if (hits.length === 1) { conIn.value = hits[0] + " "; return; }
+    let common = hits[0];
+    for (const hit of hits) while (!hit.startsWith(common)) common = common.slice(0, -1);
+    if (common.length > v.length) conIn.value = common;
+    else say([hits.join("   "), "dim"]);
+  }
+});
+
+// A dead ^ can leak into the field ("^h") or combine with the next letter ("ê")
+conIn.addEventListener("input", () => {
+  let v = conIn.value.replace(/^[\^`~°]+/, "");
+  if (conState.fresh && v) {
+    conState.fresh = false;
+    v = v[0].normalize("NFD").replace(/[̀-ͯ]/g, "") + v.slice(1);
+  }
+  if (v !== conIn.value) conIn.value = v;
+});
+
+$("con-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const v = conIn.value;
+  conIn.value = "";
+  runLine(v);
+});
+$("con-close").addEventListener("click", closeConsole);
+// Tapping the output focuses the prompt (unless you're selecting text)
+conOut.addEventListener("click", () => { if (!String(getSelection?.() ?? "")) conIn.focus({ preventScroll: true }); });
+
+// Touch: long-press the clock
+{
+  const meta = document.querySelector(".meta");
+  let pressTimer = null;
+  const cancel = () => clearTimeout(pressTimer);
+  meta.addEventListener("pointerdown", () => {
+    cancel();
+    pressTimer = setTimeout(() => { navigator.vibrate?.(12); openConsole(); }, 650);
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((ev) => meta.addEventListener(ev, cancel));
+  meta.addEventListener("contextmenu", (e) => e.preventDefault());
+}
+
 /* ---------- DevTools greeting ----------
-   For everyone who opens the console looking for secrets. */
-(function devtoolsHello() {
+   For everyone who opens the console looking for secrets.
+   Also printed again by the `devtools` console command. */
+function devtoolsHello() {
   const ART = [
     "██████╗ ███████╗███████╗███████╗",
     "██╔══██╗██╔════╝██╔════╝╚══███╔╝",
@@ -983,6 +1179,7 @@ document.addEventListener("visibilitychange", () => {
     "%c» %ckleiner Tipp für ungeduldige: %coiia()",
     dim, txt, dim, txt, dim, txt, hl
   );
+  console.log("%c» %cnoch ungeduldiger: %c^%c auf der Seite öffnet die Konsole, dann %chelp", dim, txt, hl, txt, hl);
   console.log("%c» %cWARNUNG: %cwenn dir jemand sagt, du sollst hier was reinkopieren – lass es.", dim, red, txt);
 
   // Console shortcut: party mode without typing on the page
@@ -991,7 +1188,8 @@ document.addEventListener("visibilitychange", () => {
     togglePartyMode();
     return party.on ? "🐈 o i i a o i i a" : "party over.";
   };
-})();
+}
+devtoolsHello();
 
 /* ============================================================
    Background: drifting smoke (WebGL, domain-warped fbm noise).

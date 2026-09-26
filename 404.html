@@ -252,10 +252,18 @@
       (function loop() { setTimeout(() => { if (!document.hidden) glitch(); loop(); }, 2500 + Math.random() * 3000); })();
     }
 
-    /* ---------- Enter / Escape takes you home ---------- */
+    /* ---------- Enter / Escape takes you home ----------
+       The site-wide typed eggs work here too: "oiia" (home + party),
+       "ballet", "break". Absolute URLs: this page shows up at any path. */
+    let typed = "";
     document.addEventListener("keydown", (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); location.href = "/"; }
+      if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); location.href = "/"; return; }
+      if (e.key.length !== 1) return;
+      typed = (typed + e.key.toLowerCase()).slice(-6);
+      if (typed.endsWith("oiia")) location.href = "/#oiia";
+      else if (typed === "ballet") location.href = "/ballet.html";
+      else if (typed.endsWith("break")) location.href = "/breakdance.html";
     });
 
     /* ---------- Tab title ---------- */

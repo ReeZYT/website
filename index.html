@@ -125,6 +125,22 @@
     <span class="signal__sub">reconnecting…</span>
   </div>
 
+  <!-- Developer console: ^ / ` / ~ or long-press the clock, then `help` -->
+  <section class="con" id="con" role="dialog" aria-label="Developer console" hidden>
+    <header class="con__bar">
+      <span class="con__title">Console</span>
+      <span class="con__hint">help · ↑↓ history · tab completes · esc closes</span>
+      <button class="con__close" id="con-close" type="button" aria-label="Close console">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div class="con__out" id="con-out" role="log" aria-live="polite"></div>
+    <form class="con__line" id="con-form" autocomplete="off">
+      <label class="con__prompt" for="con-in" aria-hidden="true">]</label>
+      <input class="con__in" id="con-in" type="text" aria-label="Command" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+    </form>
+  </section>
+
   <!-- Party mode cats live here -->
   <div class="cats" id="cats" aria-hidden="true"></div>
   <p class="sr-only" id="party-status" aria-live="polite"></p>

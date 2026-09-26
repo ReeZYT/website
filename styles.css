@@ -699,10 +699,6 @@ body { position: relative; }
   .avatar { margin-bottom: 8px; }
 }
 
-/* ---------- Idle sigil: content steps back, the grid takes over ---------- */
-
-.is-idle .main.is-in { opacity: 0.04; transition: opacity 2.6s var(--ease); }
-.is-idle .log, .is-idle .dock.is-in { opacity: 0.2; transition: opacity 2.6s var(--ease); }
 .log { transition: opacity 0.4s var(--ease); }
 
 /* ---------- CRT look on the splash ---------- */
@@ -840,3 +836,87 @@ body { position: relative; }
 
 .meta { max-width: 100%; }
 .link__title { white-space: nowrap; }
+
+/* ---------- Developer console (^ / ` / ~) ---------- */
+
+.con {
+  position: fixed; z-index: 65; top: 0; left: 0; right: 0;
+  height: min(58vh, 520px); height: min(58dvh, 520px);
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 3px),
+    rgba(8, 8, 10, 0.96);
+  box-shadow: inset 0 -1px 0 var(--separator), 0 24px 48px -16px rgba(0, 0, 0, 0.75);
+  font: 400 0.8125rem/1.55 var(--font-mono);
+  color: var(--label-2);
+  transform: translateY(-102%);
+  transition: transform 0.28s var(--ease);
+}
+.con.is-open { transform: none; }
+.con[hidden] { display: none; }
+
+.con__bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 4px max(8px, env(safe-area-inset-right)) 4px max(16px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--separator);
+}
+.con__title { color: var(--label); font-weight: 700; font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.con__hint { color: var(--label-3); font-size: 0.6875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.con__close {
+  flex: none; margin-left: auto;
+  display: grid; place-items: center;
+  width: 44px; height: 44px;
+  border: 0; border-radius: 50%;
+  background: transparent; color: var(--label-2);
+  cursor: pointer;
+  transition: background-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.con__close:hover { background: var(--fill-hover); color: var(--label); }
+.con__close svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+.con__out {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: 10px max(16px, env(safe-area-inset-right)) 10px max(16px, env(safe-area-inset-left));
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.con__row { min-height: 1.55em; }
+.con__grid {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 3ch; padding-left: 2ch; margin-bottom: 2px;
+}
+.con__grid--egg { padding-left: 4ch; margin-bottom: 8px; column-gap: 2ch; }
+
+.con .c-head { color: var(--label); font-weight: 700; letter-spacing: 0.1em; }
+.con .c-hl   { color: var(--accent); }
+.con .c-egg  { color: var(--label); font-weight: 600; }
+.con .c-in   { color: var(--label); }
+.con .c-dim  { color: var(--label-3); }
+.con .c-ok   { color: var(--online); }
+.con .c-err  { color: var(--dnd); }
+
+.con__line {
+  display: flex; align-items: center; gap: 1ch;
+  padding: 8px max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+  border-top: 1px solid var(--separator);
+  background: var(--fill);
+}
+.con__line:focus-within { background: var(--fill-hover); }
+.con__prompt { color: var(--accent); font-weight: 700; }
+.con__in {
+  flex: 1; min-width: 0; height: 32px;
+  padding: 0; border: 0; background: transparent;
+  color: var(--label); caret-color: var(--accent);
+  font: inherit;
+}
+.con__in:focus, .con__in:focus-visible { outline: none; }
+
+/* long-press on the clock opens the console: no text selection / callout */
+.meta { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* iOS zooms into inputs under 16px */
+@media (pointer: coarse) { .con__in { font-size: 16px; } }
+@media (max-width: 480px) { .con__hint { display: none; } }
+@media (prefers-reduced-motion: reduce) { .con { transition: none; } }
+@media (prefers-contrast: more) { .con { background: #0b0b0d; box-shadow: inset 0 -1px 0 rgba(255,255,255,0.5); } }

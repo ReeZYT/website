@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>reez.cc ▸ ballet</title>
-  <meta name="description" content="The idle sigil, but she dances.">
+  <meta name="description" content="A dancer made of dots, in a ring of runes.">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#050506">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -477,9 +477,14 @@
       }, 220);
     }
 
+    let clock = 0, lastTime = null;
     function frame(time) {
-      // gather into the figure shortly after load (like the idle sigil, just quicker)
-      const since = time - form.start;
+      // own clock instead of raw time: in party mode (party.js) she dances 1.6× faster
+      clock += Math.min(100, lastTime == null ? 0 : time - lastTime) *
+        (document.documentElement.classList.contains("is-party") ? 1.6 : 1);
+      lastTime = time;
+      // gather into the figure shortly after load, then dance
+      const since = clock;
       form.k = since > 700 ? Math.min(1, form.k + 1 / 170) : 0;
       const ie = form.k * form.k * (3 - 2 * form.k);
       const dance = Math.max(0, since - 2600);
@@ -584,6 +589,8 @@
       ripples.push({ x: e.clientX, y: e.clientY, r: 0 });
     }, { passive: true });
     addEventListener("keydown", (e) => { if (e.key === "Escape") location.href = "./"; });
+    // party.js ripples the grid on the beat (a window property survives minification)
+    window.reezRipple = (x, y) => { if (!reduceMotion.matches) ripples.push({ x, y, r: 0 }); };
 
     let resizeTimer = null;
     addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(start, 120); });
@@ -630,5 +637,7 @@
     addEventListener("keydown", unlock);
     playMusic();
   </script>
+  <!-- easter eggs: oiia party (waltz mix), ballet / break jumps -->
+  <script src="party.js" data-party="assets/ballet-party.mp3" data-party-name="oiia waltz" data-bpm="168" data-cat-every="3"></script>
 </body>
 </html>

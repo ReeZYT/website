@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>reez.cc ▸ breaking</title>
-  <meta name="description" content="The idle sigil, but it breaks.">
+  <meta name="description" content="A b-boy made of dots, in a ring of runes.">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#050506">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -586,6 +586,8 @@
       ripples.push({ x: e.clientX, y: e.clientY, r: 0 });
     }, { passive: true });
     addEventListener("keydown", (e) => { if (e.key === "Escape") location.href = "./"; });
+    // party.js ripples the grid on the beat (a window property survives minification)
+    window.reezRipple = (x, y) => { if (!reduceMotion.matches) ripples.push({ x, y, r: 0 }); };
 
     let resizeTimer = null;
     addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(start, 120); });
@@ -632,5 +634,7 @@
     addEventListener("keydown", unlock);
     playMusic();
   </script>
+  <!-- easter eggs: oiia party (cypher mix, same 100 bpm), ballet / break jumps -->
+  <script src="party.js" data-party="assets/breaks-party.mp3" data-party-name="oiia cypher" data-bpm="100" data-cat-every="2"></script>
 </body>
 </html>

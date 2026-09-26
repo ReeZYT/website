@@ -48,10 +48,10 @@ for (const f of ["index.html", "404.html", "ballet.html", "breakdance.html"]) {
   writeFileSync(`${OUT}/styles.css`, r.styles); log("styles.css", src, r.styles);
 }
 
-{
-  const src = readFileSync("script.js", "utf8");
+for (const f of ["script.js", "party.js"]) {
+  const src = readFileSync(f, "utf8");
   const r = await terser(src, JS_OPTS);
-  writeFileSync(`${OUT}/script.js`, r.code); log("script.js", src, r.code);
+  writeFileSync(`${OUT}/${f}`, r.code); log(f, src, r.code);
 }
 
 {
