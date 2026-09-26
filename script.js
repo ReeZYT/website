@@ -812,8 +812,10 @@ document.addEventListener("keydown", (e) => {
   if (!entered || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape") { partyOff(); return; }
   if (e.key.length !== 1 || e.target.closest("input, textarea")) return;
-  typed = (typed + e.key.toLowerCase()).slice(-4);
-  if (typed === "oiia") { typed = ""; togglePartyMode(); }
+  typed = (typed + e.key.toLowerCase()).slice(-6);
+  if (typed.endsWith("oiia")) { typed = ""; togglePartyMode(); }
+  else if (typed === "ballet") location.href = "ballet.html";
+  else if (typed.endsWith("break")) location.href = "breakdance.html";
 });
 
 
