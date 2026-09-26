@@ -705,6 +705,7 @@ const PARTY_LOG = [
 ];
 function partyOn() {
   if (party.on || !entered) return;
+  if (esp.on) espOff();
   party.on = true;
   party.beat = -1;
   document.documentElement.classList.add("is-party");
@@ -748,10 +749,11 @@ partyExit.addEventListener("click", partyOff);
 let typed = "";
 document.addEventListener("keydown", (e) => {
   if (!entered || e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.key === "Escape") { partyOff(); return; }
+  if (e.key === "Escape") { partyOff(); espOff(); return; }
   if (e.key.length !== 1 || e.target.closest("input, textarea")) return;
   typed = (typed + e.key.toLowerCase()).slice(-6);
   if (typed.endsWith("oiia")) { typed = ""; togglePartyMode(); }
+  else if (typed === "aimbot") toggleEsp();
   else if (typed === "ballet") location.href = "ballet.html";
   else if (typed.endsWith("break")) location.href = "breakdance.html";
 });
@@ -770,6 +772,454 @@ window.addEventListener("pointerdown", (e) => {
   if (!party.on || e.target.closest(".dock, .avatar, .con")) return;
   for (let i = 0; i < 3; i++) spawnCat(e.clientX, e.clientY, true);
 });
+
+/* ============================================================
+   Easter egg: aimbot.dll – the boot log has been promising it all along.
+   Trigger: type "aimbot", hold the Discord card (aimbot.dll) for a
+   moment, or `aimbot` in the console / aimbot() in DevTools.
+   Rounds of cats run across the page; ESP boxes + tracers on every cat,
+   a crosshair that snaps to the nearest cat's head, click to shoot,
+   R to reload, kill feed, ACE when the round is cleared – then the next
+   round comes in faster. Esc unloads. Sounds are synthesised.
+   ============================================================ */
+const esp = {
+  on: false, raf: null, cv: null, cx: null,
+  mouse: { x: innerWidth / 2, y: innerHeight / 2, fine: false },
+  aim: { x: innerWidth / 2, y: innerHeight / 2 },
+  lock: null, recoil: 0, flash: 0, ammo: 30, reserve: 90, reloading: false,
+  kills: 0, round: 0, roundKills: 0, roundStart: 0, clearing: false,
+  cats: [], dying: [], marks: [], floats: [], timers: [], noise: null,
+};
+const ESP_FOV = 150;
+const ESP_PER_ROUND = 5;
+const CAT_NAMES = ["snow cat", "orange cat", "grey cat", "void cat", "cream cat", "pink cat", "blue cat"]; // same order as CAT_COLORS
+const ESP_LOG = [
+  ["» injecting <span class=\"hl\">aimbot.dll</span>", "ok"],
+  ["» ESP · aim assist · target: <span class=\"hl\">cats</span>", "ok"],
+  ["» click to shoot · R reload · Esc unload", ""],
+];
+const ESP_FONT = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+const GUN_SVG = `<svg viewBox="0 0 40 12" aria-hidden="true"><path d="M0 3.2h6.5l1.6-1h17.4V1h2.2v1.2H40v2.3H28.6v1.3h-6l-1.3 1.3h-2.6L16.3 12h-3.6l1.6-4.9h-2.6L8 9.4H1.2L0 7z"/></svg>`;
+const HS_SVG = `<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="5.6" r="4.8"/><circle cx="7.8" cy="4.4" r="1.4" fill="#1c1c20"/><path d="M4 10.2h4V12H4z"/></svg>`;
+
+/* ---------- sound ---------- */
+function sfx(kind) {
+  if (muted) return;
+  let ac;
+  try { ac = audioCtx || (audioCtx = new (window.AudioContext || window.webkitAudioContext)()); } catch { return; }
+  if (ac.state === "suspended") ac.resume();
+  if (!esp.noise) {
+    esp.noise = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+    const d = esp.noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = ac.currentTime;
+  const out = ac.createGain();
+  out.gain.value = 0.5;
+  out.connect(ac.destination);
+  const env = (g, at, peak, dur) => {
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(peak, at + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  };
+  const tone = (f, at, dur, peak, type = "sine", f2) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f, at);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, at + dur);
+    env(g, at, peak, dur);
+    o.connect(g).connect(out); o.start(at); o.stop(at + dur + 0.02);
+  };
+  const burst = (at, dur, peak, type, f, f2, q = 0.7) => {
+    const s = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = esp.noise;
+    fl.type = type; fl.Q.value = q;
+    fl.frequency.setValueAtTime(f, at);
+    if (f2) fl.frequency.exponentialRampToValueAtTime(f2, at + dur);
+    env(g, at, peak, dur);
+    s.connect(fl).connect(g).connect(out); s.start(at); s.stop(at + dur + 0.02);
+  };
+  if (kind === "shot") {
+    burst(t, 0.2, 0.9, "lowpass", 7000, 350);
+    tone(170, t, 0.14, 0.8, "sine", 42);
+    burst(t + 0.05, 0.35, 0.12, "bandpass", 1800, 600, 1.2); // room tail
+  } else if (kind === "dink") {           // helmet / headshot
+    tone(2950, t + 0.02, 0.4, 0.22, "triangle");
+    tone(4420, t + 0.02, 0.28, 0.1, "sine");
+    tone(6100, t + 0.02, 0.1, 0.06, "sine");
+  } else if (kind === "reload") {
+    burst(t + 0.15, 0.05, 0.5, "bandpass", 2600, 0, 4);
+    burst(t + 0.3, 0.06, 0.35, "bandpass", 1400, 0, 3);
+    burst(t + 1.35, 0.05, 0.5, "bandpass", 3200, 0, 4);
+    burst(t + 1.55, 0.08, 0.6, "bandpass", 2000, 0, 3);
+  } else if (kind === "empty") {
+    burst(t, 0.03, 0.4, "highpass", 4000);
+  } else if (kind === "inject") {
+    [440, 660, 990].forEach((f, i) => tone(f, t + i * 0.07, 0.09, 0.12, "square"));
+  } else if (kind === "ace") {
+    [659, 784, 988, 1319, 1568].forEach((f, i) => tone(f, t + i * 0.09, 0.32, 0.14, "triangle"));
+    burst(t, 1.2, 0.15, "highpass", 3000, 9000);
+  }
+}
+
+/* ---------- overlay ---------- */
+function espBuild() {
+  if (esp.cv) return;
+  const mk = (cls, html = "") => {
+    const el = document.createElement(cls === "esp" ? "canvas" : "div");
+    el.className = cls; el.setAttribute("aria-hidden", "true"); el.innerHTML = html;
+    document.body.append(el);
+    return el;
+  };
+  esp.cv = mk("esp");
+  esp.cx = esp.cv.getContext("2d");
+  esp.hud = mk("esp-hud");
+  esp.feed = mk("killfeed");
+  esp.ace = mk("ace", '<span class="ace__big">ACE</span><span class="ace__sub"></span>');
+  espSize();
+  window.addEventListener("resize", espSize);
+}
+function espSize() {
+  const d = Math.min(window.devicePixelRatio || 1, 2);
+  esp.cv.width = innerWidth * d; esp.cv.height = innerHeight * d;
+  esp.cx.setTransform(d, 0, 0, d, 0, 0);
+}
+function espHud() {
+  esp.hud.innerHTML =
+    `<span class="esp-hud__gun">AK-47</span>` +
+    `<span class="esp-hud__ammo${esp.ammo <= 5 ? " is-low" : ""}">${esp.reloading ? "reloading…" : esp.ammo}</span>` +
+    `<span class="esp-hud__res">/ ${esp.reserve}</span>` +
+    `<span class="esp-hud__r">round ${esp.round}</span>` +
+    `<span class="esp-hud__k">${esp.kills} ${esp.kills === 1 ? "kill" : "kills"}</span>`;
+}
+function killfeed(victim) {
+  const row = document.createElement("div");
+  row.className = "kf";
+  row.innerHTML = `<span class="kf__a">reez</span>${GUN_SVG}${HS_SVG}<span class="kf__v"></span>`;
+  row.querySelector(".kf__v").textContent = victim;
+  esp.feed.prepend(row);
+  while (esp.feed.children.length > 5) esp.feed.lastChild.remove();
+  setTimeout(() => { row.classList.add("is-out"); setTimeout(() => row.remove(), 400); }, 5000);
+}
+const espLater = (fn, ms) => esp.timers.push(setTimeout(fn, ms));
+
+/* ---------- cats ---------- */
+function espSpawnCat() {
+  if (!esp.on) return;
+  const W = innerWidth, H = innerHeight;
+  const size = 58 + Math.random() * 30;
+  const ci = (Math.random() * CAT_COLORS.length) | 0;
+  const el = document.createElement("div");
+  el.className = "cat cat--target";
+  el.style.setProperty("--size", size + "px");
+  el.style.setProperty("--spin", (0.5 + Math.random() * 0.5).toFixed(2) + "s");
+  el.style.color = CAT_COLORS[ci];
+  el.innerHTML = `<div class="cat__spin">${CAT_SVG}</div>`;
+  catLayer.appendChild(el);
+  // run in from a random edge, toward somewhere in the middle
+  const side = (Math.random() * 4) | 0;
+  const x = side === 0 ? -size : side === 1 ? W : Math.random() * (W - size);
+  const y = side === 2 ? -size : side === 3 ? H : Math.random() * (H - size);
+  const tx = W * (0.25 + Math.random() * 0.5), ty = H * (0.25 + Math.random() * 0.5);
+  const speed = reduceMotion.matches ? 0 : 1.4 + esp.round * 0.45 + Math.random();
+  const d = Math.hypot(tx - x, ty - y) || 1;
+  esp.cats.push({
+    el, size, x: reduceMotion.matches ? tx : x, y: reduceMotion.matches ? ty : y,
+    vx: ((tx - x) / d) * speed, vy: ((ty - y) / d) * speed,
+    name: CAT_NAMES[ci], hp: 100, shown: 100, born: performance.now(),
+  });
+}
+function espStartRound() {
+  if (!esp.on) return;
+  esp.round++; esp.roundKills = 0; esp.clearing = false;
+  esp.roundStart = performance.now();
+  espHud();
+  for (let i = 0; i < ESP_PER_ROUND; i++) espLater(espSpawnCat, 250 + i * 380);
+}
+function espClearCats() {
+  for (const c of [...esp.cats, ...esp.dying]) c.el.remove();
+  esp.cats = []; esp.dying = [];
+}
+function espMeasure() {
+  for (const c of esp.cats) c.head = { x: c.x + c.size / 2, y: c.y + c.size * 0.42 };
+}
+function espLockAt(x, y) {
+  let best = null, bestD = ESP_FOV;
+  for (const c of esp.cats) {
+    const d = Math.hypot(c.head.x - x, c.head.y - y);
+    if (d < bestD) { bestD = d; best = c; }
+  }
+  return best;
+}
+
+function espShoot() {
+  if (esp.reloading) return;
+  if (esp.ammo <= 0) { sfx("empty"); espReload(); return; }
+  esp.ammo--;
+  sfx("shot");
+  esp.recoil = 1; esp.flash = 1;
+  if (!reduceMotion.matches) esp.aim.y -= 12;
+  espMeasure();
+  const cat = espLockAt(esp.mouse.x, esp.mouse.y);
+  const now = performance.now();
+  if (cat) {
+    // aimbot.dll never misses: always a one-tap
+    esp.cats.splice(esp.cats.indexOf(cat), 1);
+    cat.hp = 0; cat.dead = now;
+    cat.vy = -6; cat.vx *= 0.3; cat.rot = 0; cat.vr = (Math.random() - 0.5) * 16;
+    cat.el.classList.add("is-hit");
+    esp.dying.push(cat);
+    esp.kills++; esp.roundKills++;
+    setTimeout(() => sfx("dink"), 30);
+    esp.marks.push({ x: cat.head.x, y: cat.head.y, t0: now, kill: true });
+    esp.floats.push({ x: cat.head.x, y: cat.head.y - 14, t0: now, text: "-100 HS" });
+    killfeed(cat.name);
+    if (esp.roundKills >= ESP_PER_ROUND) espAce();
+  } else {
+    esp.marks.push({ x: esp.aim.x, y: esp.aim.y, t0: now, miss: true });
+  }
+  espHud();
+  if (!esp.ammo) setTimeout(espReload, 250);
+}
+function espReload() {
+  if (esp.reloading || esp.ammo === 30) return;
+  esp.reloading = true;
+  sfx("reload");
+  espHud();
+  espLater(() => {
+    const take = Math.min(30 - esp.ammo, esp.reserve);
+    esp.ammo += take; esp.reserve -= take;
+    if (!esp.reserve) esp.reserve = 90; // there's always another crate
+    esp.reloading = false;
+    espHud();
+  }, 1800);
+}
+function espAce() {
+  if (esp.clearing) return;
+  esp.clearing = true;
+  const secs = ((performance.now() - esp.roundStart) / 1000).toFixed(1);
+  espLater(() => {
+    sfx("ace");
+    esp.ace.querySelector(".ace__sub").textContent = `round ${esp.round} · ${ESP_PER_ROUND} cats in ${secs} s · undetected`;
+    esp.ace.classList.add("is-on");
+    clearInterval(logTimer);
+    $("log").innerHTML = logHTML([...ESP_LOG, [`» <span class="hl">ACE</span> · round ${esp.round} in ${secs} s`, "ok"]]);
+  }, 350);
+  espLater(() => esp.ace.classList.remove("is-on"), 2800);
+  espLater(espStartRound, 3300);
+}
+
+/* ---------- draw ---------- */
+function espFrame(t) {
+  const c = esp.cx, W = innerWidth, H = innerHeight, now = performance.now();
+  // move the cats: run in, then bounce around inside the window
+  for (const cat of esp.cats) {
+    cat.x += cat.vx; cat.y += cat.vy;
+    const inside = cat.x >= 0 && cat.y >= 0 && cat.x <= W - cat.size && cat.y <= H - cat.size;
+    if (inside) cat.in = true;
+    if (cat.in) {
+      if (cat.x < 0 || cat.x > W - cat.size) { cat.vx *= -1; cat.x = Math.max(0, Math.min(W - cat.size, cat.x)); }
+      if (cat.y < 0 || cat.y > H - cat.size) { cat.vy *= -1; cat.y = Math.max(0, Math.min(H - cat.size, cat.y)); }
+    }
+    cat.el.style.transform = `translate3d(${cat.x}px, ${cat.y}px, 0)`;
+  }
+  for (let i = esp.dying.length - 1; i >= 0; i--) {
+    const cat = esp.dying[i], age = (now - cat.dead) / 900;
+    if (age >= 1) { cat.el.remove(); esp.dying.splice(i, 1); continue; }
+    cat.vy += 0.55; cat.x += cat.vx; cat.y += cat.vy; cat.rot += cat.vr;
+    cat.el.style.transform = `translate3d(${cat.x}px, ${cat.y}px, 0) rotate(${cat.rot}deg)`;
+    cat.el.style.opacity = String(1 - age);
+  }
+  espMeasure();
+  const m = esp.mouse;
+  const lock = esp.lock = espLockAt(m.x, m.y);
+  const goal = lock ? lock.head : m;
+  const k = reduceMotion.matches ? 1 : lock ? 0.35 : 0.6;
+  esp.aim.x += (goal.x - esp.aim.x) * k;
+  esp.aim.y += (goal.y - esp.aim.y) * k;
+  esp.recoil *= 0.86; esp.flash *= 0.6;
+  if (!reduceMotion.matches) {
+    mainEl.style.setProperty("--shake-x", ((Math.random() - 0.5) * 6 * esp.recoil).toFixed(1) + "px");
+    mainEl.style.setProperty("--shake-y", ((Math.random() - 0.5) * 6 * esp.recoil).toFixed(1) + "px");
+  }
+  c.clearRect(0, 0, W, H);
+  c.font = `600 10px ${ESP_FONT}`;
+  c.textAlign = "left";
+
+  for (const cat of esp.cats) {
+    cat.shown += (cat.hp - cat.shown) * 0.25;
+    const pad = 2, x = cat.x - pad, y = cat.y + cat.size * 0.08 - pad, w = cat.size + pad * 2, h = cat.size * 0.92 + pad * 2;
+    const locked = cat === lock;
+    const col = locked ? "255, 214, 10" : "255, 69, 58";
+    // tracer from the bottom of the screen
+    c.strokeStyle = `rgba(${col}, 0.28)`; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(W / 2, H); c.lineTo(x + w / 2, y + h); c.stroke();
+    // corner box
+    const L = Math.min(14, w / 4);
+    c.strokeStyle = `rgba(${col}, 1)`; c.lineWidth = locked ? 2 : 1.5;
+    c.beginPath();
+    c.moveTo(x, y + L); c.lineTo(x, y); c.lineTo(x + L, y);
+    c.moveTo(x + w - L, y); c.lineTo(x + w, y); c.lineTo(x + w, y + L);
+    c.moveTo(x + w, y + h - L); c.lineTo(x + w, y + h); c.lineTo(x + w - L, y + h);
+    c.moveTo(x + L, y + h); c.lineTo(x, y + h); c.lineTo(x, y + h - L);
+    c.stroke();
+    // hp bar
+    c.fillStyle = "rgba(0, 0, 0, 0.55)";
+    c.fillRect(x - 7, y, 3, h);
+    const hp = Math.max(0, cat.shown) / 100;
+    c.fillStyle = `hsl(${Math.round(hp * 120)}, 90%, 50%)`;
+    c.fillRect(x - 7, y + h * (1 - hp), 3, h * hp);
+    // name tag on the top edge
+    const dist = Math.round(Math.hypot(cat.head.x - m.x, cat.head.y - m.y) / 24);
+    const label = `${cat.name} · ${dist}m`;
+    const tw = c.measureText(label).width;
+    c.fillStyle = "rgba(12, 12, 14, 0.88)";
+    c.fillRect(x + 6, y - 8, tw + 12, 16);
+    c.strokeStyle = `rgba(${col}, 0.9)`; c.lineWidth = 1;
+    c.strokeRect(x + 6.5, y - 7.5, tw + 11, 15);
+    c.fillStyle = `rgba(${col}, 1)`;
+    c.fillText(label, x + 12, y + 4);
+    if (locked) {
+      c.strokeStyle = "rgba(255, 214, 10, 0.9)"; c.lineWidth = 1.5;
+      c.beginPath(); c.arc(cat.head.x, cat.head.y, 8, 0, Math.PI * 2); c.stroke();
+    }
+  }
+
+  // FOV circle (mouse only)
+  if (m.fine) {
+    c.setLineDash([3, 5]);
+    c.strokeStyle = "rgba(255, 255, 255, 0.12)"; c.lineWidth = 1;
+    c.beginPath(); c.arc(m.x, m.y, ESP_FOV, 0, Math.PI * 2); c.stroke();
+    c.setLineDash([]);
+  }
+
+  // hitmarkers + damage numbers
+  for (let i = esp.marks.length - 1; i >= 0; i--) {
+    const mk = esp.marks[i], age = (now - mk.t0) / (mk.miss ? 600 : 380);
+    if (age >= 1) { esp.marks.splice(i, 1); continue; }
+    if (mk.miss) {
+      c.fillStyle = `rgba(20, 20, 22, ${0.8 * (1 - age)})`;
+      c.beginPath(); c.arc(mk.x, mk.y, 2.5, 0, Math.PI * 2); c.fill();
+      continue;
+    }
+    const g = 6 + age * 4, l = 8;
+    c.strokeStyle = `rgba(255, 69, 58, ${1 - age})`;
+    c.lineWidth = 2;
+    c.beginPath();
+    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      c.moveTo(mk.x + sx * g, mk.y + sy * g); c.lineTo(mk.x + sx * (g + l), mk.y + sy * (g + l));
+    }
+    c.stroke();
+  }
+  c.font = `800 13px ${ESP_FONT}`;
+  c.textAlign = "center";
+  for (let i = esp.floats.length - 1; i >= 0; i--) {
+    const f = esp.floats[i], age = (now - f.t0) / 900;
+    if (age >= 1) { esp.floats.splice(i, 1); continue; }
+    c.fillStyle = `rgba(255, 69, 58, ${1 - age})`;
+    c.fillText(f.text, f.x + 22, f.y - age * 34);
+  }
+
+  // muzzle flash + crosshair
+  const ax = esp.aim.x, ay = esp.aim.y;
+  if (esp.flash > 0.05) {
+    const gr = c.createRadialGradient(ax, ay, 0, ax, ay, 26);
+    gr.addColorStop(0, `rgba(255, 230, 160, ${0.6 * esp.flash})`);
+    gr.addColorStop(1, "rgba(255, 180, 60, 0)");
+    c.fillStyle = gr; c.beginPath(); c.arc(ax, ay, 26, 0, Math.PI * 2); c.fill();
+  }
+  if (m.fine || esp.marks.length || esp.recoil > 0.05) {
+    const gap = 4 + esp.recoil * 10, len = 7;
+    const arms = () => {
+      c.beginPath();
+      c.moveTo(ax - gap - len, ay); c.lineTo(ax - gap, ay);
+      c.moveTo(ax + gap, ay); c.lineTo(ax + gap + len, ay);
+      c.moveTo(ax, ay - gap - len); c.lineTo(ax, ay - gap);
+      c.moveTo(ax, ay + gap); c.lineTo(ax, ay + gap + len);
+      c.stroke();
+    };
+    c.lineCap = "butt";
+    c.strokeStyle = "rgba(0, 0, 0, 0.65)"; c.lineWidth = 4; arms();
+    c.strokeStyle = lock ? "#ffd60a" : "#4dff88"; c.lineWidth = 2; arms();
+    c.fillStyle = lock ? "#ffd60a" : "#4dff88";
+    c.fillRect(ax - 1, ay - 1, 2, 2);
+  }
+}
+function espLoop(t) {
+  if (!esp.on) { esp.raf = null; return; }
+  espFrame(t);
+  esp.raf = requestAnimationFrame(espLoop);
+}
+
+/* ---------- on / off ---------- */
+function espOn() {
+  if (esp.on || !entered) return;
+  if (party.on) partyOff();
+  espBuild();
+  esp.on = true;
+  esp.ammo = 30; esp.reserve = 90; esp.kills = 0; esp.round = 0; esp.reloading = false;
+  esp.marks = []; esp.floats = [];
+  esp.aim.x = esp.mouse.x; esp.aim.y = esp.mouse.y;
+  document.documentElement.classList.add("is-esp");
+  clearInterval(logTimer);
+  $("log").innerHTML = logHTML(ESP_LOG);
+  $("party-status").textContent = "aimbot.dll injected. Cats incoming: click to shoot, R to reload, Escape to unload.";
+  sfx("inject");
+  espStartRound();
+  if (!esp.raf) esp.raf = requestAnimationFrame(espLoop);
+}
+function espOff() {
+  if (!esp.on) return;
+  esp.on = false;
+  document.documentElement.classList.remove("is-esp");
+  esp.timers.forEach(clearTimeout); esp.timers = [];
+  esp.reloading = false;
+  espClearCats();
+  esp.cx.clearRect(0, 0, innerWidth, innerHeight);
+  mainEl.style.removeProperty("--shake-x"); mainEl.style.removeProperty("--shake-y");
+  esp.ace.classList.remove("is-on");
+  esp.feed.replaceChildren();
+  clearInterval(logTimer);
+  renderLog(LOG.length, false);
+  $("party-status").textContent = "aimbot.dll unloaded.";
+}
+const toggleEsp = () => (esp.on ? espOff() : espOn());
+
+/* ---------- input ---------- */
+window.addEventListener("pointermove", (e) => {
+  esp.mouse.x = e.clientX; esp.mouse.y = e.clientY;
+  esp.mouse.fine = e.pointerType === "mouse" || e.pointerType === "pen";
+}, { passive: true });
+window.addEventListener("pointerdown", (e) => {
+  if (!esp.on || e.button !== 0 || e.target.closest(".dock, .con")) return;
+  if (e.target.closest(".main")) e.preventDefault(); // no focus / selection while shooting
+  esp.mouse.x = e.clientX; esp.mouse.y = e.clientY;
+  esp.mouse.fine = e.pointerType === "mouse" || e.pointerType === "pen";
+  if (!esp.mouse.fine) { esp.aim.x = e.clientX; esp.aim.y = e.clientY; }
+  espShoot();
+});
+// while it's loaded, clicks are shots: links don't open, Discord doesn't copy
+window.addEventListener("click", (e) => {
+  if (esp.on && e.target.closest(".main")) { e.preventDefault(); e.stopPropagation(); }
+}, true);
+document.addEventListener("keydown", (e) => {
+  if (!esp.on || e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, textarea")) return;
+  if (e.key === "r" || e.key === "R") espReload();
+});
+
+// Hold the Discord card (it's literally called aimbot.dll)
+{
+  let holdTimer = null, fired = false;
+  discordBtn.addEventListener("pointerdown", () => {
+    fired = false;
+    clearTimeout(holdTimer);
+    if (esp.on) return;
+    holdTimer = setTimeout(() => { fired = true; navigator.vibrate?.(20); espOn(); }, 700);
+  });
+  ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => discordBtn.addEventListener(ev, () => clearTimeout(holdTimer)));
+  discordBtn.addEventListener("click", (e) => { if (fired) { fired = false; e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  discordBtn.addEventListener("contextmenu", (e) => e.preventDefault());
+}
 
 /* ---------- Forum gate ----------
    The forum URL is stored encrypted (AES-GCM). The access key is
@@ -856,13 +1306,14 @@ gate.addEventListener("submit", async (e) => {
 const TITLES = {
   base: "reez.cc ▸ aimbot.dll loaded ▸ ",
   party: "oiia oiia ▸ reez party mix ▸ ",
+  esp: "aimbot.dll ▸ injected ▸ undetected ▸ ",
   away: "come back…",
 };
 let titlePos = 0;
 setInterval(() => {
   if (document.hidden) return;
-  if (reduceMotion.matches) { document.title = party.on ? "oiia oiia" : "reez.cc"; return; }
-  const str = party.on ? TITLES.party : TITLES.base;
+  if (reduceMotion.matches) { document.title = party.on ? "oiia oiia" : esp.on ? "aimbot.dll" : "reez.cc"; return; }
+  const str = party.on ? TITLES.party : esp.on ? TITLES.esp : TITLES.base;
   titlePos = (titlePos + 1) % str.length;
   document.title = str.slice(titlePos) + str.slice(0, titlePos);
 }, 320);
@@ -905,10 +1356,11 @@ const EGGS = [
   { name: "party mode (oiia)", cmd: "party", trigger: ['type "oiia" on any page', "home: tap the avatar 5× quickly", "ballet / breakdance: tap the screen 5× quickly", "oiia() in the DevTools console"], exit: ["Esc", "✕ in the dock / the ✕ o i i a pill", "same trigger again"], note: "ballet + breakdance get their own mix · click during the party to throw cats" },
   { name: "ballet", cmd: "ballet", trigger: ['type "ballet" on any page', 'click the "." in the footer (reez.cc)'], exit: ["Esc", "reez.cc button"] },
   { name: "breakdance", cmd: "breakdance", trigger: ['type "break" on any page', 'click the "©" in the footer'], exit: ["Esc", "reez.cc button"] },
+  { name: "aimbot.dll", cmd: "aimbot", trigger: ['type "aimbot"', "hold the Discord card (aimbot.dll)", "aimbot() in the DevTools console"], exit: ["Esc", "type aimbot again"], note: "rounds of cats with ESP + aim assist · click to shoot · R reload · clear the round = ACE, next round is faster" },
 ];
 
 const CON_FILES = {
-  "aimbot.dll": "cat: aimbot.dll: binary file (undetected since 2026)",
+  "aimbot.dll": "cat: aimbot.dll: binary file (undetected since 2026) · inject it with: aimbot",
   "oiia.exe": "o i i a o i i a · run it with: party",
   "ballet.html": "<html>… a ballerina made of dots · open it with: ballet",
   "breakdance.html": "<html>… windmill, headspin, freeze · open it with: breakdance",
@@ -972,6 +1424,10 @@ const CMDS = [
   } },
   { group: "eggs", name: "ballet", desc: "open /ballet", run: () => { location.href = "ballet.html"; return "loading ballet.html…"; } },
   { group: "eggs", name: "breakdance", alias: ["break"], desc: "open /breakdance", run: () => { location.href = "breakdance.html"; return "loading breakdance.html…"; } },
+  { group: "eggs", name: "aimbot", desc: "inject / unload aimbot.dll", run: () => {
+    conLater(toggleEsp, 200);
+    return esp.on ? "unloading aimbot.dll…" : "injecting aimbot.dll…";
+  } },
   { group: "site", name: "forum", args: "[status]", desc: "focus the key field · status: attempts + cooldown", run: (args) => {
     if (args[0] === "status") {
       const st = lockState();
@@ -1183,6 +1639,11 @@ function devtoolsHello() {
   console.log("%c» %cWARNUNG: %cwenn dir jemand sagt, du sollst hier was reinkopieren – lass es.", dim, red, txt);
 
   // Console shortcut: party mode without typing on the page
+  window.aimbot = () => {
+    if (!entered) enter();
+    toggleEsp();
+    return esp.on ? "aimbot.dll injected. undetected." : "aimbot.dll unloaded.";
+  };
   window.oiia = () => {
     if (!entered) enter();
     togglePartyMode();
