@@ -213,13 +213,13 @@ for (const card of document.querySelectorAll(".card")) {
     card.style.setProperty("--ry", "0deg");
   });
 }
-
 /* ============================================================
-   Background: raymarched liquid chrome.
-   A wobbling core with orbiting droplets that melt into it, two
-   orbit rings, and one droplet that chases the pointer. The scene
-   turns with the pointer. Rendered at reduced resolution and scaled
-   down further if frames get slow.
+   Background: a field of voxel pillars, like a live data grid.
+   The camera glides over it and leans with the pointer; pillars
+   under the pointer rise and light up, random cells blink like
+   activity LEDs. Rays walk the grid cell by cell (DDA) and hit each
+   pillar exactly. Rendered at reduced resolution and scaled down
+   further if frames get slow.
    ============================================================ */
 const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
 const FRAG = `
@@ -228,90 +228,112 @@ uniform vec2 uRes;
 uniform float uTime;
 uniform vec2 uMouse;
 uniform vec2 uShift;
-uniform float uCam;
 
-mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
-float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+const float GAP = 0.09;
+const float TOP = 3.6; // tallest pillar
 
-vec2 map(vec3 p){
-  vec3 q = p;
-  q.xz *= rot(uTime * 0.12 + uMouse.x * 0.9);
-  q.yz *= rot(-uMouse.y * 0.6);
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
-  float t = uTime * 0.6;
-  float d = length(q) - 1.05;
-  d += 0.09 * sin(2.6 * q.x + t) * sin(2.9 * q.y + t * 1.3) * sin(2.4 * q.z + t * 0.8);
-  for (int i = 0; i < 4; i++) {
-    float fi = float(i);
-    vec3 c = vec3(sin(t * 0.7 + fi * 1.9) * 1.55, cos(t * 0.55 + fi * 2.4) * 0.95, sin(t * 0.45 + fi * 2.9) * 1.25);
-    d = smin(d, length(q - c) - (0.22 + 0.06 * fi), 0.55);
-  }
-  // droplet that chases the pointer (world space)
-  vec3 m = vec3(uMouse.x * 2.4 + uShift.x * 1.6, uMouse.y * 1.5 - uShift.y * 1.6, 1.2);
-  d = smin(d, length(p - m) - 0.26, 0.8);
-
-  // thin orbit rings
-  vec3 r1 = q; r1.xy *= rot(0.45);
-  vec3 r2 = q; r2.yz *= rot(1.1); r2.xy *= rot(-0.3);
-  float ring = min(length(vec2(length(r1.xz) - 2.15, r1.y)) - 0.012,
-                   length(vec2(length(r2.xz) - 2.55, r2.y)) - 0.008);
-  return d < ring ? vec2(d, 0.0) : vec2(ring, 1.0);
+vec2 hover;            // grid point under the pointer
+float height(vec2 id){
+  float t = uTime * 0.5;
+  float h = 0.25 + 0.45 * (0.5 + 0.5 * sin(id.x * 0.42 + t) * cos(id.y * 0.37 - t * 0.7));
+  h += 0.35 * hash(id);
+  vec2 d = id + 0.5 - hover;
+  h += 2.1 * exp(-dot(d, d) * 0.09);
+  return h;
 }
 
-vec3 normal(vec3 p){
-  const vec2 e = vec2(0.0015, -0.0015);
-  return normalize(e.xyy * map(p + e.xyy).x + e.yyx * map(p + e.yyx).x + e.yxy * map(p + e.yxy).x + e.xxx * map(p + e.xxx).x);
-}
-
-vec3 pal(float t){ return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.52, 0.68, 0.86))); }
-
-// fake studio environment: soft light strips + a cool horizon
-vec3 env(vec3 r){
-  vec3 c = mix(vec3(0.03, 0.035, 0.07), vec3(0.42, 0.46, 0.66), smoothstep(-0.4, 0.9, r.y));
-  c += vec3(0.9, 0.95, 1.0) * smoothstep(0.86, 0.99, r.y) * 1.2;
-  c += vec3(0.55, 0.95, 1.0) * smoothstep(0.035, 0.0, abs(r.x - 0.55)) * smoothstep(-0.2, 0.4, r.y) * 1.5;
-  c += vec3(0.75, 0.55, 1.0) * smoothstep(0.05, 0.0, abs(r.x + 0.7)) * 1.1;
-  return c;
+void camera(vec2 uv, out vec3 ro, out vec3 rd){
+  ro = vec3(uMouse.x * 2.2, 7.2 + uMouse.y * 0.9, 10.0 - uTime * 0.7);
+  vec3 ta = ro + vec3(uMouse.x * 0.8, -6.0, -9.5);
+  vec3 f = normalize(ta - ro);
+  vec3 r = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
+  vec3 u = cross(r, f);
+  rd = normalize(uv.x * r + uv.y * u + 1.6 * f);
 }
 
 void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
-  uv -= uShift;
-  vec3 ro = vec3(0.0, 0.0, uCam);
-  vec3 rd = normalize(vec3(uv, -1.75));
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y - uShift;
+  vec3 ro, rd;
+  camera(uv, ro, rd);
 
-  float t = 0.0, glow = 0.0;
-  vec2 h = vec2(1.0, 0.0);
-  for (int i = 0; i < 80; i++) {
-    h = map(ro + rd * t);
-    glow += 0.012 / (0.04 + h.x * h.x);
-    if (h.x < 0.001 || t > 16.0) break;
-    t += h.x * 0.9;
-  }
+  // where the pointer ray meets the grid
+  vec3 mo, md;
+  camera(uMouse * vec2(0.5 * uRes.x / uRes.y, 0.5) - uShift, mo, md);
+  hover = (mo + md * ((1.2 - mo.y) / md.y)).xz;
 
-  // background: deep space with a soft halo behind the object
-  float halo = exp(-2.2 * length(uv - vec2(0.0, 0.0)));
-  vec3 col = vec3(0.012, 0.014, 0.03) + vec3(0.12, 0.16, 0.36) * halo * 0.55;
-  col += pal(uv.y * 0.4 + uTime * 0.03) * glow * 0.004;
+  vec3 bg = mix(vec3(0.01, 0.012, 0.025), vec3(0.05, 0.04, 0.12), smoothstep(-0.6, 0.4, uv.y));
+  vec3 col = bg;
 
-  if (t < 16.0) {
-    vec3 p = ro + rd * t;
-    vec3 n = normal(p);
-    vec3 r = reflect(rd, n);
-    float fr = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
-    if (h.y > 0.5) {
-      col = mix(vec3(0.5, 0.9, 1.0), vec3(0.8, 0.6, 1.0), 0.5 + 0.5 * sin(p.x * 2.0 + uTime)) * 0.75;
-    } else {
-      vec3 iri = pal(dot(n, -rd) * 0.9 + p.y * 0.18 + uTime * 0.04);
-      col = env(r) * mix(vec3(1.0), iri, 0.55) * 1.25;
-      col += iri * (0.12 + fr * 1.3);
-      col += vec3(1.0) * pow(max(dot(r, normalize(vec3(0.5, 0.8, 0.4))), 0.0), 40.0) * 1.5;
+  // start where the ray drops below the tallest pillar
+  float t = max(0.0, (ro.y - TOP) / -rd.y);
+  vec3 p = ro + rd * t;
+  vec2 cell = floor(p.xz);
+  vec2 dir = sign(rd.xz);
+  vec2 inv = 1.0 / max(abs(rd.xz), 1e-4);
+  vec2 tMax = t + (cell + max(dir, 0.0) - p.xz) * dir * inv;
+  vec2 tDelta = inv;
+
+  float hitT = -1.0, hitH = 0.0;
+  vec3 n = vec3(0.0);
+  vec2 hitCell = vec2(0.0);
+  for (int i = 0; i < 110; i++) {
+    float h = height(cell);
+    // ray vs. this cell's pillar (axis-aligned box)
+    vec3 bmin = vec3(cell.x + GAP, -3.0, cell.y + GAP);
+    vec3 bmax = vec3(cell.x + 1.0 - GAP, h, cell.y + 1.0 - GAP);
+    vec3 ird = 1.0 / rd;
+    vec3 t0 = (bmin - ro) * ird, t1 = (bmax - ro) * ird;
+    vec3 tn = min(t0, t1), tf = max(t0, t1);
+    float tNear = max(max(tn.x, tn.y), tn.z);
+    float tFar = min(min(tf.x, tf.y), tf.z);
+    if (tNear < tFar && tFar > 0.0) {
+      hitT = tNear; hitH = h; hitCell = cell;
+      n = tNear == tn.y ? vec3(0.0, 1.0, 0.0) : tNear == tn.x ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
+      break;
     }
+    if (tMax.x < tMax.y) { tMax.x += tDelta.x; cell.x += dir.x; }
+    else { tMax.y += tDelta.y; cell.y += dir.y; }
+    if (min(tMax.x, tMax.y) > 60.0) break;
   }
 
-  col = col / (1.0 + col);                 // tonemap
-  col = pow(col, vec3(0.85));
-  col *= 1.0 - 0.35 * dot(uv * 0.6, uv * 0.6); // vignette
+  if (hitT > 0.0) {
+    vec3 hp = ro + rd * hitT;
+    vec2 local = hp.xz - hitCell;
+    float rnd = hash(hitCell);
+    vec2 dm = hitCell + 0.5 - hover;
+    float near = exp(-dot(dm, dm) * 0.09);
+    vec3 tint = mix(vec3(0.49, 0.97, 1.0), vec3(0.65, 0.55, 1.0), rnd);
+    // blinking "activity" cells
+    float blink = step(0.985, hash(hitCell + floor(uTime * 1.5)));
+    tint = mix(tint, vec3(1.0, 0.48, 0.85), blink);
+
+    if (n.y > 0.5) {
+      // top face: dark plate with a glowing rim
+      vec2 e = min(local - GAP, 1.0 - GAP - local);
+      float rim = smoothstep(0.06, 0.0, min(e.x, e.y));
+      float lvl = smoothstep(0.3, 2.6, hitH);
+      col = vec3(0.02, 0.024, 0.045) + tint * (0.02 + 0.1 * lvl + 0.9 * near + 0.6 * blink);
+      col += tint * rim * (0.18 + 1.4 * near + 0.8 * blink);
+    } else {
+      // sides: darker, with rack-like LED rows and lit vertical edges
+      float side = n.x != 0.0 ? local.y : local.x;
+      float edge = smoothstep(0.05, 0.0, min(side - GAP, 1.0 - GAP - side));
+      float rows = step(0.82, fract(hp.y * 3.0)) * step(0.5, hash(hitCell + floor(hp.y * 3.0)));
+      float shade = n.x != 0.0 ? 0.6 : 1.0;
+      col = vec3(0.012, 0.014, 0.03) * shade;
+      col += tint * (edge * (0.1 + 0.8 * near) + rows * (0.06 + 0.5 * near)) * shade;
+      col += tint * smoothstep(-1.0, hitH, hp.y) * 0.03;
+    }
+    // fog into the distance
+    col = mix(col, bg, 1.0 - exp(-max(hitT - 5.0, 0.0) * 0.09));
+  }
+
+  col += vec3(0.35, 0.3, 0.9) * 0.08 * exp(-abs(uv.y - 0.32) * 6.0); // horizon haze
+  col = col / (1.0 + col);
+  col = pow(col, vec3(0.9));
+  col *= 1.0 - 0.3 * dot(uv * 0.7, uv * 0.7);
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -343,22 +365,19 @@ function startScene() {
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
   const u = (n) => gl.getUniformLocation(prog, n);
-  const uRes = u("uRes"), uTime = u("uTime"), uMouse = u("uMouse"), uShift = u("uShift"), uCam = u("uCam");
+  const uRes = u("uRes"), uTime = u("uTime"), uMouse = u("uMouse"), uShift = u("uShift");
 
   let scale = 0;              // render resolution vs. device pixels
-  let shift = [0, 0], cam = 6.2;
+  let shift = [0, 0];
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    // ~1.2 MP is plenty for soft shapes; the CSS upscale hides the rest
+    // ~1.2 MP keeps it smooth; the CSS upscale hides the rest
     if (!scale) scale = Math.min(0.75, Math.sqrt(1.2e6 / (window.innerWidth * window.innerHeight * dpr * dpr)));
     canvas.width = Math.round(window.innerWidth * dpr * scale);
     canvas.height = Math.round(window.innerHeight * dpr * scale);
     gl.viewport(0, 0, canvas.width, canvas.height);
-    // wide screens: push the object right, next to the text
-    const aspect = window.innerWidth / window.innerHeight;
-    shift = window.innerWidth > 940 ? [Math.min(0.45, aspect * 0.26), 0] : [0, aspect < 1 ? -0.18 : 0];
-    // portrait: pull the camera back and sink the object behind the cards
-    cam = aspect < 1 ? 6.2 / Math.max(aspect, 0.45) * 0.75 : 6.2;
+    // portrait: look a bit further down so the grid sits behind the cards
+    shift = [0, window.innerWidth / window.innerHeight < 1 ? 0.12 : 0];
   }
   resize();
   window.addEventListener("resize", resize);
@@ -375,7 +394,6 @@ function startScene() {
     gl.uniform1f(uTime, time);
     gl.uniform2f(uMouse, pointer.x, pointer.y);
     gl.uniform2f(uShift, shift[0], shift[1]);
-    gl.uniform1f(uCam, cam);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     // adaptive quality: drop resolution while frames stay slow
