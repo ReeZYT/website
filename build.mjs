@@ -5,6 +5,7 @@ import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } fr
 import { minify as terser } from "terser";
 import { minify as html } from "html-minifier-terser";
 import CleanCSS from "clean-css";
+import { createHash } from "node:crypto";
 
 const OUT = "dist";
 const JS_OPTS = {
@@ -35,12 +36,6 @@ const log = (f, a, b) => console.log(`${f.padEnd(12)} ${kb(a).padStart(9)} -> ${
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
 
-for (const f of ["index.html", "404.html"]) {
-  const src = readFileSync(f, "utf8");
-  const out = await html(src, HTML_OPTS);
-  writeFileSync(`${OUT}/${f}`, out); log(f, src, out);
-}
-
 {
   const src = readFileSync("styles.css", "utf8");
   const r = new CleanCSS(CSS_OPTS).minify(src);
@@ -52,6 +47,17 @@ for (const f of ["script.js"]) {
   const src = readFileSync(f, "utf8");
   const r = await terser(src, JS_OPTS);
   writeFileSync(`${OUT}/${f}`, r.code); log(f, src, r.code);
+}
+
+// Cache busting: HTML points at styles.css / script.js with a content hash,
+// so a deploy never mixes a fresh page with a cached old script.
+const hash = (f) => createHash("sha256").update(readFileSync(`${OUT}/${f}`)).digest("hex").slice(0, 10);
+const bust = { "styles.css": hash("styles.css"), "script.js": hash("script.js") };
+
+for (const f of ["index.html", "404.html"]) {
+  const src = readFileSync(f, "utf8").replace(/((?:href|src)="\/?)(styles\.css|script\.js)"/g, (_, pre, name) => `${pre}${name}?v=${bust[name]}"`);
+  const out = await html(src, HTML_OPTS);
+  writeFileSync(`${OUT}/${f}`, out); log(f, src, out);
 }
 
 {

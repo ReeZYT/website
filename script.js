@@ -258,7 +258,7 @@ float height(vec2 id){
 }
 
 void camera(vec2 uv, out vec3 ro, out vec3 rd){
-  ro = vec3(uLean.x * 2.2, 7.2 + uLean.y * 0.9, 10.0 - uTime * 0.7);
+  ro = vec3(uLean.x * 1.6, 7.2 + uLean.y * 0.7, 10.0 - uTime * 0.7);
   vec3 ta = ro + vec3(uLean.x * 0.8, -6.0, -9.5);
   vec3 f = normalize(ta - ro);
   vec3 r = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
@@ -413,9 +413,10 @@ function startScene() {
     hover.x = ease(hover.x, pointer.tx, 9, s);
     hover.y = ease(hover.y, pointer.ty, 9, s);
     hover.w = ease(hover.w, pointer.active ? 1 : 0, pointer.active ? 2.5 : 4, s);
-    // Camera: slow and soft, drifts back to center when the pointer is gone
-    lean.x = ease(lean.x, pointer.active ? pointer.tx : 0, 1.6, s);
-    lean.y = ease(lean.y, pointer.active ? pointer.ty : 0, 1.6, s);
+    // Camera: slow and soft. Its pull grows with the lift's fade-in, so the
+    // first pointer move turns the view gently instead of swinging it.
+    lean.x = ease(lean.x, pointer.tx * hover.w, 1.2, s);
+    lean.y = ease(lean.y, pointer.ty * hover.w, 1.2, s);
 
     gl.uniform2f(uRes, canvas.width, canvas.height);
     gl.uniform1f(uTime, time);
