@@ -35,7 +35,7 @@ const log = (f, a, b) => console.log(`${f.padEnd(12)} ${kb(a).padStart(9)} -> ${
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT);
 
-for (const f of ["index.html", "404.html", "ballet.html", "breakdance.html"]) {
+for (const f of ["index.html", "404.html"]) {
   const src = readFileSync(f, "utf8");
   const out = await html(src, HTML_OPTS);
   writeFileSync(`${OUT}/${f}`, out); log(f, src, out);
@@ -48,7 +48,7 @@ for (const f of ["index.html", "404.html", "ballet.html", "breakdance.html"]) {
   writeFileSync(`${OUT}/styles.css`, r.styles); log("styles.css", src, r.styles);
 }
 
-for (const f of ["script.js", "party.js"]) {
+for (const f of ["script.js"]) {
   const src = readFileSync(f, "utf8");
   const r = await terser(src, JS_OPTS);
   writeFileSync(`${OUT}/${f}`, r.code); log(f, src, r.code);
