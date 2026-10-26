@@ -181,21 +181,32 @@ gate.addEventListener("submit", async (e) => {
 });
 
 /* ============================================================
-   Pointer: shared, smoothed in the render loop
+   Pointer: shared, smoothed in the render loop.
+   `active` says whether we know where the pointer is. It turns off
+   when the pointer leaves the window or the tab loses focus, so the
+   scene can fade the effect out instead of sliding to the new spot
+   when the pointer comes back somewhere else.
    ============================================================ */
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const pointer = { x: 0, y: 0, tx: 0, ty: 0 }; // -1..1, y up
+const pointer = { tx: 0, ty: 0, active: false }; // -1..1, y up
+function aim(x, y) {
+  pointer.tx = x;
+  pointer.ty = y;
+  pointer.active = true;
+}
 window.addEventListener("pointermove", (e) => {
-  pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
-  pointer.ty = -((e.clientY / window.innerHeight) * 2 - 1);
+  aim((e.clientX / window.innerWidth) * 2 - 1, -((e.clientY / window.innerHeight) * 2 - 1));
   $("readout").textContent = `x ${((pointer.tx + 1) / 2).toFixed(3)} · y ${((1 - pointer.ty) / 2).toFixed(3)}`;
 }, { passive: true });
 // phones: tilt the device instead
 window.addEventListener("deviceorientation", (e) => {
   if (e.gamma == null) return;
-  pointer.tx = Math.max(-1, Math.min(1, e.gamma / 30));
-  pointer.ty = Math.max(-1, Math.min(1, (45 - e.beta) / 30));
+  aim(Math.max(-1, Math.min(1, e.gamma / 30)), Math.max(-1, Math.min(1, (45 - e.beta) / 30)));
 }, { passive: true });
+const release = () => { pointer.active = false; };
+document.documentElement.addEventListener("pointerleave", release);
+window.addEventListener("blur", release);
+document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
 
 /* ---------- Cards: 3D tilt + spotlight ---------- */
 for (const card of document.querySelectorAll(".card")) {
@@ -226,7 +237,9 @@ const FRAG = `
 precision highp float;
 uniform vec2 uRes;
 uniform float uTime;
-uniform vec2 uMouse;
+uniform vec2 uMouse;  // pointer on screen, -1..1
+uniform vec2 uLean;   // slow, damped pointer for the camera
+uniform float uHover; // 0..1, how strongly the pointer lifts the grid
 uniform vec2 uShift;
 
 const float GAP = 0.09;
@@ -240,13 +253,13 @@ float height(vec2 id){
   float h = 0.25 + 0.45 * (0.5 + 0.5 * sin(id.x * 0.42 + t) * cos(id.y * 0.37 - t * 0.7));
   h += 0.35 * hash(id);
   vec2 d = id + 0.5 - hover;
-  h += 2.1 * exp(-dot(d, d) * 0.09);
+  h += 2.1 * uHover * exp(-dot(d, d) * 0.09);
   return h;
 }
 
 void camera(vec2 uv, out vec3 ro, out vec3 rd){
-  ro = vec3(uMouse.x * 2.2, 7.2 + uMouse.y * 0.9, 10.0 - uTime * 0.7);
-  vec3 ta = ro + vec3(uMouse.x * 0.8, -6.0, -9.5);
+  ro = vec3(uLean.x * 2.2, 7.2 + uLean.y * 0.9, 10.0 - uTime * 0.7);
+  vec3 ta = ro + vec3(uLean.x * 0.8, -6.0, -9.5);
   vec3 f = normalize(ta - ro);
   vec3 r = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
   vec3 u = cross(r, f);
@@ -303,7 +316,7 @@ void main(){
     vec2 local = hp.xz - hitCell;
     float rnd = hash(hitCell);
     vec2 dm = hitCell + 0.5 - hover;
-    float near = exp(-dot(dm, dm) * 0.09);
+    float near = uHover * exp(-dot(dm, dm) * 0.09);
     vec3 tint = mix(vec3(0.49, 0.97, 1.0), vec3(0.65, 0.55, 1.0), rnd);
     // blinking "activity" cells
     float blink = step(0.985, hash(hitCell + floor(uTime * 1.5)));
@@ -366,6 +379,7 @@ function startScene() {
 
   const u = (n) => gl.getUniformLocation(prog, n);
   const uRes = u("uRes"), uTime = u("uTime"), uMouse = u("uMouse"), uShift = u("uShift");
+  const uLean = u("uLean"), uHover = u("uHover");
 
   let scale = 0;              // render resolution vs. device pixels
   let shift = [0, 0];
@@ -383,16 +397,31 @@ function startScene() {
   window.addEventListener("resize", resize);
 
   let raf = 0, last = performance.now(), slow = 0, time = 0;
+  // smoothed state: where the lift is, how strong it is, where the camera leans
+  const hover = { x: 0, y: 0, w: 0 };
+  const lean = { x: 0, y: 0 };
+  // frame-rate independent easing: covers ~63% of the gap every 1/rate seconds
+  const ease = (from, to, rate, dt) => from + (to - from) * (1 - Math.exp(-rate * dt));
   function frame(now) {
     const dt = Math.min(now - last, 100);
     last = now;
     if (!reduceMotion.matches) time += dt / 1000;
-    pointer.x += (pointer.tx - pointer.x) * 0.06;
-    pointer.y += (pointer.ty - pointer.y) * 0.06;
+    const s = dt / 1000;
+    // Lift: while it's faded out, jump it to the pointer unseen, then fade
+    // in there. Only follow by easing once it's visible.
+    if (pointer.active && hover.w < 0.02) { hover.x = pointer.tx; hover.y = pointer.ty; }
+    hover.x = ease(hover.x, pointer.tx, 9, s);
+    hover.y = ease(hover.y, pointer.ty, 9, s);
+    hover.w = ease(hover.w, pointer.active ? 1 : 0, pointer.active ? 2.5 : 4, s);
+    // Camera: slow and soft, drifts back to center when the pointer is gone
+    lean.x = ease(lean.x, pointer.active ? pointer.tx : 0, 1.6, s);
+    lean.y = ease(lean.y, pointer.active ? pointer.ty : 0, 1.6, s);
 
     gl.uniform2f(uRes, canvas.width, canvas.height);
     gl.uniform1f(uTime, time);
-    gl.uniform2f(uMouse, pointer.x, pointer.y);
+    gl.uniform2f(uMouse, hover.x, hover.y);
+    gl.uniform2f(uLean, lean.x, lean.y);
+    gl.uniform1f(uHover, hover.w);
     gl.uniform2f(uShift, shift[0], shift[1]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
