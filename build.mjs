@@ -66,7 +66,7 @@ for (const f of ["index.html", "404.html"]) {
   writeFileSync(`${OUT}/favicon.svg`, out); log("favicon.svg", src, out);
 }
 
-for (const f of ["CNAME", ".nojekyll"]) if (existsSync(f)) cpSync(f, `${OUT}/${f}`);
+for (const f of ["CNAME", ".nojekyll", "robots.txt", "sitemap.xml", "llms.txt"]) if (existsSync(f)) cpSync(f, `${OUT}/${f}`);
 cpSync("assets", `${OUT}/assets`, { recursive: true, filter: (p) => !p.endsWith("README.md") && !p.endsWith(".DS_Store") });
 
 console.log(`\nDone -> ${OUT}/`);
