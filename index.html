@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ReeZ — Lukas</title>
-  <meta name="description" content="ReeZ (Lukas Kluge): software engineer from Düsseldorf, Germany. Reverse engineering, data mining, clips and games — YouTube, TikTok, Steam, Spotify and Discord in one place.">
+  <meta name="description" content="ReeZ (Lukas Kluge): software engineer from Düsseldorf, Germany. Reverse engineering, data mining, clips and games — YouTube, TikTok, Steam, Spotify, Discord and his projects ascii.reez.cc and wallpapers.reez.cc in one place.">
   <meta name="author" content="Lukas Kluge">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <link rel="canonical" href="https://reez.cc/">
@@ -53,7 +53,8 @@
           "https://steamcommunity.com/id/1337ReeZ/",
           "https://open.spotify.com/user/31jvz3d2bg2k4hritofuumsepbmy",
           "https://github.com/ReeZYT"
-        ]
+        ],
+        "owns": [{ "@id": "https://ascii.reez.cc/#site" }, { "@id": "https://wallpapers.reez.cc/#site" }]
       },
       {
         "@type": "ProfilePage",
@@ -61,7 +62,8 @@
         "url": "https://reez.cc/",
         "name": "Lukas Kluge (ReeZ)",
         "inLanguage": "en",
-        "mainEntity": { "@id": "https://reez.cc/#person" }
+        "mainEntity": { "@id": "https://reez.cc/#person" },
+        "significantLink": ["https://ascii.reez.cc/", "https://wallpapers.reez.cc/"]
       },
       {
         "@type": "WebSite",
@@ -69,6 +71,24 @@
         "url": "https://reez.cc/",
         "name": "reez.cc",
         "alternateName": "Lukas Kluge",
+        "publisher": { "@id": "https://reez.cc/#person" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://ascii.reez.cc/#site",
+        "url": "https://ascii.reez.cc/",
+        "name": "ascii.reez.cc",
+        "description": "Free ASCII art tools by ReeZ: text to ASCII with hundreds of FIGlet fonts, an ASCII art gallery and image to ASCII, all in the browser.",
+        "creator": { "@id": "https://reez.cc/#person" },
+        "publisher": { "@id": "https://reez.cc/#person" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://wallpapers.reez.cc/#site",
+        "url": "https://wallpapers.reez.cc/",
+        "name": "wallpapers.reez.cc",
+        "description": "Wallpaper Engine templates by ReeZ with free previews and downloads.",
+        "creator": { "@id": "https://reez.cc/#person" },
         "publisher": { "@id": "https://reez.cc/#person" }
       }
     ]
@@ -122,6 +142,7 @@
         </div>
       </section>
 
+      <div class="links">
       <nav class="cards" aria-label="Socials">
         <ul role="list">
           <li class="cards__wide">
@@ -185,6 +206,37 @@
           </li>
         </ul>
       </nav>
+
+      <nav class="cards cards--projects" aria-labelledby="projects-label">
+        <p class="cards__label" id="projects-label"><span>Projects</span></p>
+        <ul role="list">
+          <li>
+            <a class="card" href="https://ascii.reez.cc/" target="_blank" rel="noopener" style="--brand:#7cf7ff">
+              <span class="card__top">
+                <svg class="card__icon card__icon--line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="m7 10 3 2.5L7 15M12.5 15H17"/></svg>
+                <span class="card__tag">Tool</span>
+                <svg class="card__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              </span>
+              <span class="card__title">ASCII</span>
+              <span class="card__detail">ascii.reez.cc</span>
+              <span class="sr-only">ASCII art tools: text to ASCII, gallery, image to ASCII (opens in new tab)</span>
+            </a>
+          </li>
+          <li>
+            <a class="card" href="https://wallpapers.reez.cc/" target="_blank" rel="noopener" style="--brand:#ff7ad9">
+              <span class="card__top">
+                <svg class="card__icon card__icon--line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 20.5h8M12 16.5v4M2.5 13l5-4.5 4 3.5 3-2.5 7 5.5"/></svg>
+                <span class="card__tag">Downloads</span>
+                <svg class="card__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              </span>
+              <span class="card__title">Wallpapers</span>
+              <span class="card__detail">wallpapers.reez.cc</span>
+              <span class="sr-only">Wallpaper Engine templates (opens in new tab)</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+      </div>
     </main>
 
     <footer class="foot">
