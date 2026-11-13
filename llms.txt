@@ -13,3 +13,8 @@ Lukas Kluge works on reverse engineering, data mining and pattern recognition. A
 - [Spotify](https://open.spotify.com/user/31jvz3d2bg2k4hritofuumsepbmy): playlists and profile
 - [GitHub](https://github.com/ReeZYT): code as ReeZYT
 - Discord: aimbot.dll
+
+## Projects
+
+- [ascii.reez.cc](https://ascii.reez.cc/): free ASCII art tools by ReeZ (text to ASCII with FIGlet fonts, ASCII art gallery, image to ASCII), all in the browser
+- [wallpapers.reez.cc](https://wallpapers.reez.cc/): Wallpaper Engine templates by ReeZ with previews and downloads

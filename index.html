@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ReeZ — Lukas</title>
-  <meta name="description" content="ReeZ (Lukas Kluge): software engineer from Düsseldorf, Germany. Reverse engineering, data mining, clips and games — YouTube, TikTok, Steam, Spotify and Discord in one place.">
+  <meta name="description" content="ReeZ (Lukas Kluge): software engineer from Düsseldorf, Germany. Reverse engineering, data mining, clips and games — YouTube, TikTok, Steam, Spotify, Discord and his projects ascii.reez.cc and wallpapers.reez.cc in one place.">
   <meta name="author" content="Lukas Kluge">
   <meta name="robots" content="index, follow, max-image-preview:large">
   <link rel="canonical" href="https://reez.cc/">
@@ -53,7 +53,8 @@
           "https://steamcommunity.com/id/1337ReeZ/",
           "https://open.spotify.com/user/31jvz3d2bg2k4hritofuumsepbmy",
           "https://github.com/ReeZYT"
-        ]
+        ],
+        "owns": [{ "@id": "https://ascii.reez.cc/#site" }, { "@id": "https://wallpapers.reez.cc/#site" }]
       },
       {
         "@type": "ProfilePage",
@@ -61,7 +62,8 @@
         "url": "https://reez.cc/",
         "name": "Lukas Kluge (ReeZ)",
         "inLanguage": "en",
-        "mainEntity": { "@id": "https://reez.cc/#person" }
+        "mainEntity": { "@id": "https://reez.cc/#person" },
+        "significantLink": ["https://ascii.reez.cc/", "https://wallpapers.reez.cc/"]
       },
       {
         "@type": "WebSite",
@@ -69,6 +71,24 @@
         "url": "https://reez.cc/",
         "name": "reez.cc",
         "alternateName": "Lukas Kluge",
+        "publisher": { "@id": "https://reez.cc/#person" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://ascii.reez.cc/#site",
+        "url": "https://ascii.reez.cc/",
+        "name": "ascii.reez.cc",
+        "description": "Free ASCII art tools by ReeZ: text to ASCII with hundreds of FIGlet fonts, an ASCII art gallery and image to ASCII, all in the browser.",
+        "creator": { "@id": "https://reez.cc/#person" },
+        "publisher": { "@id": "https://reez.cc/#person" }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://wallpapers.reez.cc/#site",
+        "url": "https://wallpapers.reez.cc/",
+        "name": "wallpapers.reez.cc",
+        "description": "Wallpaper Engine templates by ReeZ with free previews and downloads.",
+        "creator": { "@id": "https://reez.cc/#person" },
         "publisher": { "@id": "https://reez.cc/#person" }
       }
     ]
@@ -122,6 +142,7 @@
         </div>
       </section>
 
+      <div class="links">
       <nav class="cards" aria-label="Socials">
         <ul role="list">
           <li class="cards__wide">
@@ -185,6 +206,34 @@
           </li>
         </ul>
       </nav>
+
+      <!-- Projects: one <li> per tool. Copy a row, set href, --brand, name, description and host.
+           Numbers come from CSS; the list scrolls inside the panel once it gets long. -->
+      <nav class="projects" aria-labelledby="projects-label">
+        <p class="projects__head">
+          <span class="projects__label" id="projects-label">Projects</span>
+          <span class="projects__scope" aria-hidden="true">*.reez.cc</span>
+        </p>
+        <ul class="projects__list" role="list">
+          <li>
+            <a class="proj" href="https://ascii.reez.cc/" target="_blank" rel="noopener" style="--brand:#7cf7ff">
+              <span class="proj__text"><span class="proj__name">ASCII</span><span class="proj__desc">Text, images and a gallery as ASCII art</span></span>
+              <span class="proj__host">ascii.reez.cc</span>
+              <svg class="proj__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              <span class="sr-only">(opens in new tab)</span>
+            </a>
+          </li>
+          <li>
+            <a class="proj" href="https://wallpapers.reez.cc/" target="_blank" rel="noopener" style="--brand:#ff7ad9">
+              <span class="proj__text"><span class="proj__name">Wallpapers</span><span class="proj__desc">Wallpaper Engine templates to download</span></span>
+              <span class="proj__host">wallpapers.reez.cc</span>
+              <svg class="proj__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              <span class="sr-only">(opens in new tab)</span>
+            </a>
+          </li>
+        </ul>
+      </nav>
+      </div>
     </main>
 
     <footer class="foot">
