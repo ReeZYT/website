@@ -20,6 +20,7 @@ const store = {
 };
 
 $("year").textContent = new Date().getFullYear();
+$("socials-count").textContent = String(document.querySelectorAll(".tile").length).padStart(2, "0");
 
 /* ---------- Avatar with monogram fallback ---------- */
 const avatar = $("avatar-img");
@@ -29,13 +30,11 @@ if (avatar.complete && avatar.naturalWidth === 0) markBroken();
 
 /* ---------- Local time ---------- */
 const clockFmt = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: CONFIG.timezone });
-function tick() {
+function tickClock() {
   const now = new Date();
   $("clock").textContent = clockFmt.format(now);
   $("clock").dateTime = now.toISOString();
 }
-tick();
-setInterval(tick, 1000);
 
 /* ---------- Discord: copy the username ---------- */
 const discordBtn = $("discord-copy");
@@ -67,37 +66,233 @@ discordBtn.addEventListener("click", async () => {
   }, 1800);
 });
 
-/* ---------- Live status via Lanyard ---------- */
+/* ---------- Live status via Lanyard ----------
+   Discord presence and the current Spotify track. Polled while the
+   tab is visible; elapsed time and the track progress run locally
+   between polls. If Lanyard can't be reached the panel says so and
+   the rest of the page stays as it is.                              */
 const STATUS_LABEL = { online: "Online", idle: "Away", dnd: "Do not disturb", offline: "Offline" };
+const VERB = { 0: "Playing", 1: "Streaming", 3: "Watching", 5: "Competing in" };
+const SPOTIFY_PROFILE = $("sp-link").href;
+const POLL_MS = 15_000;
+let presence = null;   // last Lanyard payload
+let pollTimer = null;
+
+const setText = (id, text) => { const el = $(id); if (el.textContent !== text) el.textContent = text; el.title = text; };
+const clock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+function since(ms) {
+  const min = Math.floor(Math.max(0, ms) / 60_000);
+  if (min < 1) return "just now";
+  if (min < 60) return `for ${min} min`;
+  return `for ${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")} min`;
+}
+function device(d) {
+  if (d.active_on_discord_desktop) return "On desktop";
+  if (d.active_on_discord_mobile) return "On mobile";
+  if (d.active_on_discord_web) return "In the browser";
+  return "";
+}
+
+function renderPresence() {
+  const d = presence;
+  if (!d) return;
+  const status = STATUS_LABEL[d.discord_status] ? d.discord_status : "offline";
+  const acts = d.activities || [];
+  const act = acts.find((a) => a.type in VERB);
+  const custom = acts.find((a) => a.type === 4 && a.state);
+  const song = d.listening_to_spotify && d.spotify;
+
+  $("now").dataset.status = status;
+  setText("now-state", STATUS_LABEL[status]);
+  $("avatar-status").dataset.status = status;
+  $("avatar-status").title = `${STATUS_LABEL[status]} on Discord`;
+  $("avatar-status").hidden = false;
+
+  // Discord row
+  if (act) {
+    const start = act.timestamps && act.timestamps.start;
+    setText("dc-line", `${VERB[act.type]} ${act.name}`);
+    setText("dc-sub", [act.details || act.state, start && since(Date.now() - start)].filter(Boolean).join(" · ") || device(d) || "aimbot.dll");
+  } else {
+    setText("dc-line", custom ? custom.state : STATUS_LABEL[status]);
+    setText("dc-sub", (status === "offline" ? "" : device(d)) || "aimbot.dll");
+  }
+
+  // Spotify row
+  const sp = $("sp"), art = $("sp-art");
+  sp.dataset.on = String(Boolean(song));
+  if (song) {
+    setText("sp-title", song.song);
+    setText("sp-artist", song.artist.replace(/; /g, ", "));
+    $("sp-link").href = song.track_id ? `https://open.spotify.com/track/${encodeURIComponent(song.track_id)}` : SPOTIFY_PROFILE;
+    if (song.album_art_url && art.dataset.src !== song.album_art_url) {
+      art.dataset.src = song.album_art_url;
+      art.hidden = true;
+      art.src = song.album_art_url;
+    }
+    const { start, end } = song.timestamps || {};
+    const total = end - start, pos = Math.min(Math.max(Date.now() - start, 0), total);
+    if (total > 0) {
+      $("sp-bar").style.transform = `scaleX(${(pos / total).toFixed(4)})`;
+      $("sp-time").textContent = `${clock(pos)} / ${clock(total)}`;
+      if (Date.now() > end + 1500) refreshSoon(); // track ended: fetch the next one
+    }
+  } else {
+    setText("sp-title", "Nothing playing");
+    setText("sp-artist", "Playlists & profile");
+    $("sp-link").href = SPOTIFY_PROFILE;
+    art.hidden = true;
+    art.removeAttribute("src");
+    delete art.dataset.src;
+    $("sp-bar").style.transform = "scaleX(0)";
+    $("sp-time").textContent = "0:00 / 0:00";
+  }
+
+  // The matching tiles show the same thing
+  $("steam-detail").textContent = act && act.type === 0 ? `Playing ${act.name}` : "1337ReeZ";
+  $("spotify-detail").textContent = song ? `${song.song} – ${song.artist.replace(/; /g, ", ")}` : "Playlists & profile";
+}
+$("sp-art").addEventListener("load", (e) => { e.target.hidden = false; });
+$("sp-art").addEventListener("error", (e) => { e.target.hidden = true; });
 
 async function loadPresence() {
   if (!CONFIG.discordId) return;
   try {
-    const res = await fetch(`https://api.lanyard.rest/v1/users/${CONFIG.discordId}`);
-    if (!res.ok) return;
-    const { data } = await res.json();
-    const status = data.discord_status || "offline";
-    const game = (data.activities || []).find((a) => a.type === 0);
-    const song = data.listening_to_spotify && data.spotify;
-
-    $("avatar-status").dataset.status = status;
-    $("avatar-status").title = `${STATUS_LABEL[status] || "Offline"} on Discord`;
-    $("avatar-status").hidden = false;
-
-    let text = STATUS_LABEL[status] || "Offline";
-    if (game) text = `Playing ${game.name}`;
-    else if (song) text = `Listening to ${song.song} – ${song.artist}`;
-    $("now").dataset.status = status;
-    $("now-text").textContent = text;
-    $("now-text").title = text;
-    $("now").hidden = false;
-
-    $("steam-detail").textContent = game ? `Playing ${game.name}` : "1337ReeZ";
-    $("spotify-detail").textContent = song ? `${song.song} – ${song.artist}` : "Playlists & profile";
-  } catch { /* offline or blocked: keep the static page */ }
+    const res = await fetch(`https://api.lanyard.rest/v1/users/${CONFIG.discordId}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    presence = (await res.json()).data;
+    renderPresence();
+  } catch {
+    if (presence) return; // keep the last known state
+    $("now").dataset.status = "offline";
+    setText("now-state", "No signal");
+    setText("dc-line", "Status unavailable");
+  }
 }
-loadPresence();
-setInterval(loadPresence, 15_000);
+let soonTimer = null;
+function refreshSoon() {
+  if (soonTimer) return;
+  soonTimer = setTimeout(() => { soonTimer = null; loadPresence(); }, 2000);
+}
+function poll() {
+  clearInterval(pollTimer);
+  if (document.hidden) return;
+  loadPresence();
+  pollTimer = setInterval(loadPresence, POLL_MS);
+}
+document.addEventListener("visibilitychange", poll);
+if (CONFIG.discordId) poll();
+else { $("now").dataset.status = "offline"; setText("now-state", "Off"); setText("dc-line", "Status is switched off"); }
+
+// One shared second tick: clock, track progress, elapsed time
+function tick() {
+  tickClock();
+  if (presence && !document.hidden) renderPresence();
+}
+tick();
+setInterval(tick, 1000);
+
+/* ---------- Wordmark: settles out of noise once on load ---------- */
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+(function settleName() {
+  const el = $("name-word"), final = el.textContent, noise = "01#$%&/<>[]{}=+*";
+  if (reduceMotion.matches) return;
+  const t0 = performance.now(), per = 150, lead = 260;
+  (function frame(now) {
+    const done = Math.floor((now - t0 - lead) / per);
+    if (done >= final.length) { el.textContent = final; return; }
+    el.textContent = [...final].map((c, i) => (i < done ? c : noise[Math.floor(Math.random() * noise.length)])).join("");
+    setTimeout(() => requestAnimationFrame(frame), 55);
+  })(t0);
+})();
+
+/* ---------- Hex view ----------
+   The facts of this page as a null-separated record, shown the way a
+   hex editor would. A cursor reads it byte by byte and the footer
+   shows the string it is in. Purely decorative (aria-hidden).        */
+(function hexView() {
+  const body = $("hex");
+  if (!body) return;
+  const record = ["ReeZ", "Lukas", "Software Engineer", "Düsseldorf, DE", "reverse engineering", "data mining", "pattern recognition", "clips", "games"];
+  const bytes = [...new TextEncoder().encode(record.join("\0") + "\0")];
+  // which string each byte belongs to, for the footer
+  const field = []; { let f = 0; for (const b of bytes) { field.push(f); if (b === 0) f += 1; } }
+  const hex = (n, w) => n.toString(16).padStart(w, "0");
+  const printable = (b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : ".");
+  $("hex-size").textContent = `${bytes.length} bytes`;
+
+  let cols = 0, cells = [], pos = 0, timer = null;
+  const rows = document.createElement("div");
+  rows.className = "hex__rows";
+  body.appendChild(rows);
+
+  function build(n) {
+    cols = n;
+    rows.textContent = "";
+    cells = bytes.map(() => []);
+    for (let r = 0; r < bytes.length; r += n) {
+      const line = document.createElement("div");
+      const off = document.createElement("span");
+      off.className = "hex__off";
+      off.textContent = hex(r, 4) + "  ";
+      const hx = document.createElement("span"), as = document.createElement("span");
+      as.className = "hex__ascii";
+      for (let i = r; i < r + n; i += 1) {
+        const gap = i - r === n / 2 - 1 && n > 8 ? "  " : " ";
+        if (i >= bytes.length) { hx.append("  " + gap); continue; }
+        const a = document.createElement("i"), b = document.createElement("i");
+        a.textContent = hex(bytes[i], 2);
+        b.textContent = printable(bytes[i]);
+        if (bytes[i] === 0) { a.className = "is-nul"; b.className = "is-nul"; }
+        hx.append(a, gap);
+        as.append(b);
+        cells[i] = [a, b];
+      }
+      line.append(off, hx, " ", as);
+      rows.appendChild(line);
+    }
+    body.style.setProperty("--ch", String(4 + 2 + n * 3 + (n > 8 ? 1 : 0) + 1 + n));
+    body.style.setProperty("--rows", String(Math.ceil(bytes.length / n)));
+    paint();
+  }
+
+  // footer: where the cursor is and the string it is reading
+  function readout() {
+    const still = reduceMotion.matches;
+    const at = still ? 0 : Math.min(pos, bytes.length - 1), f = field[at];
+    let start = at; while (start > 0 && field[start - 1] === f) start -= 1;
+    const read = still ? record[0] : new TextDecoder().decode(new Uint8Array(bytes.slice(start, at + 1).filter((v) => v !== 0))).replace(/�/g, "");
+    $("hex-off").textContent = "0x" + hex(at, 2);
+    $("hex-dec").textContent = `"${read}"`;
+  }
+
+  function paint() {
+    const still = reduceMotion.matches;
+    cells.forEach((pair, i) => pair.forEach((c) => {
+      c.classList.toggle("is-read", still || i < pos);
+      c.classList.toggle("is-on", !still && i === pos);
+    }));
+    readout();
+  }
+
+  function step() {
+    pos += 1;
+    if (pos > bytes.length) { stop(); timer = setTimeout(() => { pos = 0; paint(); run(); }, 4200); return; }
+    const pair = cells[pos - 1], next = cells[pos];
+    if (pair) pair.forEach((c) => { c.classList.remove("is-on"); c.classList.add("is-read"); });
+    if (next) next.forEach((c) => c.classList.add("is-on"));
+    readout();
+  }
+  function stop() { clearInterval(timer); clearTimeout(timer); timer = null; }
+  function run() { stop(); if (!reduceMotion.matches && !document.hidden) timer = setInterval(step, 85); }
+
+  const fit = () => { const n = body.clientWidth < 440 ? 8 : 16; if (n !== cols) build(n); };
+  new ResizeObserver(fit).observe(body);
+  fit();
+  run();
+  document.addEventListener("visibilitychange", run);
+  reduceMotion.addEventListener("change", () => { paint(); run(); });
+})();
 
 /* ---------- Forum gate ----------
    The forum URL is stored encrypted (AES-GCM). The access key is
@@ -179,262 +374,3 @@ gate.addEventListener("submit", async (e) => {
     else { gateState("Enter"); gateStatus.textContent = ""; }
   }, 1600);
 });
-
-/* ============================================================
-   Pointer: shared, smoothed in the render loop.
-   `active` says whether we know where the pointer is. It turns off
-   when the pointer leaves the window or the tab loses focus, so the
-   scene can fade the effect out instead of sliding to the new spot
-   when the pointer comes back somewhere else.
-   ============================================================ */
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const pointer = { tx: 0, ty: 0, active: false }; // -1..1, y up
-function aim(x, y) {
-  pointer.tx = x;
-  pointer.ty = y;
-  pointer.active = true;
-}
-window.addEventListener("pointermove", (e) => {
-  aim((e.clientX / window.innerWidth) * 2 - 1, -((e.clientY / window.innerHeight) * 2 - 1));
-  $("readout").textContent = `x ${((pointer.tx + 1) / 2).toFixed(3)} · y ${((1 - pointer.ty) / 2).toFixed(3)}`;
-}, { passive: true });
-// phones: tilt the device instead
-window.addEventListener("deviceorientation", (e) => {
-  if (e.gamma == null) return;
-  aim(Math.max(-1, Math.min(1, e.gamma / 30)), Math.max(-1, Math.min(1, (45 - e.beta) / 30)));
-}, { passive: true });
-const release = () => { pointer.active = false; };
-document.documentElement.addEventListener("pointerleave", release);
-window.addEventListener("blur", release);
-document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
-
-/* ---------- Cards: 3D tilt + spotlight ---------- */
-for (const card of document.querySelectorAll(".card")) {
-  card.addEventListener("pointermove", (e) => {
-    const r = card.getBoundingClientRect();
-    const px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
-    card.style.setProperty("--mx", `${px * 100}%`);
-    card.style.setProperty("--my", `${py * 100}%`);
-    if (reduceMotion.matches || e.pointerType !== "mouse") return;
-    card.style.setProperty("--rx", `${(0.5 - py) * 14}deg`);
-    card.style.setProperty("--ry", `${(px - 0.5) * 14}deg`);
-  });
-  card.addEventListener("pointerleave", () => {
-    card.style.setProperty("--rx", "0deg");
-    card.style.setProperty("--ry", "0deg");
-  });
-}
-/* ============================================================
-   Background: a field of voxel pillars, like a live data grid.
-   The camera glides over it and leans with the pointer; pillars
-   under the pointer rise and light up, random cells blink like
-   activity LEDs. Rays walk the grid cell by cell (DDA) and hit each
-   pillar exactly. Rendered at reduced resolution and scaled down
-   further if frames get slow.
-   ============================================================ */
-const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
-const FRAG = `
-precision highp float;
-uniform vec2 uRes;
-uniform float uTime;
-uniform vec2 uMouse;  // pointer on screen, -1..1
-uniform vec2 uLean;   // slow, damped pointer for the camera
-uniform float uHover; // 0..1, how strongly the pointer lifts the grid
-uniform vec2 uShift;
-
-const float GAP = 0.09;
-const float TOP = 3.6; // tallest pillar
-
-float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-
-vec2 hover;            // grid point under the pointer
-float height(vec2 id){
-  float t = uTime * 0.5;
-  float h = 0.25 + 0.45 * (0.5 + 0.5 * sin(id.x * 0.42 + t) * cos(id.y * 0.37 - t * 0.7));
-  h += 0.35 * hash(id);
-  vec2 d = id + 0.5 - hover;
-  h += 2.1 * uHover * exp(-dot(d, d) * 0.09);
-  return h;
-}
-
-void camera(vec2 uv, out vec3 ro, out vec3 rd){
-  ro = vec3(uLean.x * 1.6, 7.2 + uLean.y * 0.7, 10.0 - uTime * 0.7);
-  vec3 ta = ro + vec3(uLean.x * 0.8, -6.0, -9.5);
-  vec3 f = normalize(ta - ro);
-  vec3 r = normalize(cross(f, vec3(0.0, 1.0, 0.0)));
-  vec3 u = cross(r, f);
-  rd = normalize(uv.x * r + uv.y * u + 1.6 * f);
-}
-
-void main(){
-  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y - uShift;
-  vec3 ro, rd;
-  camera(uv, ro, rd);
-
-  // where the pointer ray meets the grid
-  vec3 mo, md;
-  camera(uMouse * vec2(0.5 * uRes.x / uRes.y, 0.5) - uShift, mo, md);
-  hover = (mo + md * ((1.2 - mo.y) / md.y)).xz;
-
-  vec3 bg = mix(vec3(0.01, 0.012, 0.025), vec3(0.05, 0.04, 0.12), smoothstep(-0.6, 0.4, uv.y));
-  vec3 col = bg;
-
-  // start where the ray drops below the tallest pillar
-  float t = max(0.0, (ro.y - TOP) / -rd.y);
-  vec3 p = ro + rd * t;
-  vec2 cell = floor(p.xz);
-  vec2 dir = sign(rd.xz);
-  vec2 inv = 1.0 / max(abs(rd.xz), 1e-4);
-  vec2 tMax = t + (cell + max(dir, 0.0) - p.xz) * dir * inv;
-  vec2 tDelta = inv;
-
-  float hitT = -1.0, hitH = 0.0;
-  vec3 n = vec3(0.0);
-  vec2 hitCell = vec2(0.0);
-  for (int i = 0; i < 110; i++) {
-    float h = height(cell);
-    // ray vs. this cell's pillar (axis-aligned box)
-    vec3 bmin = vec3(cell.x + GAP, -3.0, cell.y + GAP);
-    vec3 bmax = vec3(cell.x + 1.0 - GAP, h, cell.y + 1.0 - GAP);
-    vec3 ird = 1.0 / rd;
-    vec3 t0 = (bmin - ro) * ird, t1 = (bmax - ro) * ird;
-    vec3 tn = min(t0, t1), tf = max(t0, t1);
-    float tNear = max(max(tn.x, tn.y), tn.z);
-    float tFar = min(min(tf.x, tf.y), tf.z);
-    if (tNear < tFar && tFar > 0.0) {
-      hitT = tNear; hitH = h; hitCell = cell;
-      n = tNear == tn.y ? vec3(0.0, 1.0, 0.0) : tNear == tn.x ? vec3(-sign(rd.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(rd.z));
-      break;
-    }
-    if (tMax.x < tMax.y) { tMax.x += tDelta.x; cell.x += dir.x; }
-    else { tMax.y += tDelta.y; cell.y += dir.y; }
-    if (min(tMax.x, tMax.y) > 60.0) break;
-  }
-
-  if (hitT > 0.0) {
-    vec3 hp = ro + rd * hitT;
-    vec2 local = hp.xz - hitCell;
-    float rnd = hash(hitCell);
-    vec2 dm = hitCell + 0.5 - hover;
-    float near = uHover * exp(-dot(dm, dm) * 0.09);
-    vec3 tint = mix(vec3(0.49, 0.97, 1.0), vec3(0.65, 0.55, 1.0), rnd);
-    // blinking "activity" cells
-    float blink = step(0.985, hash(hitCell + floor(uTime * 1.5)));
-    tint = mix(tint, vec3(1.0, 0.48, 0.85), blink);
-
-    if (n.y > 0.5) {
-      // top face: dark plate with a glowing rim
-      vec2 e = min(local - GAP, 1.0 - GAP - local);
-      float rim = smoothstep(0.06, 0.0, min(e.x, e.y));
-      float lvl = smoothstep(0.3, 2.6, hitH);
-      col = vec3(0.02, 0.024, 0.045) + tint * (0.02 + 0.1 * lvl + 0.9 * near + 0.6 * blink);
-      col += tint * rim * (0.18 + 1.4 * near + 0.8 * blink);
-    } else {
-      // sides: darker, with rack-like LED rows and lit vertical edges
-      float side = n.x != 0.0 ? local.y : local.x;
-      float edge = smoothstep(0.05, 0.0, min(side - GAP, 1.0 - GAP - side));
-      float rows = step(0.82, fract(hp.y * 3.0)) * step(0.5, hash(hitCell + floor(hp.y * 3.0)));
-      float shade = n.x != 0.0 ? 0.6 : 1.0;
-      col = vec3(0.012, 0.014, 0.03) * shade;
-      col += tint * (edge * (0.1 + 0.8 * near) + rows * (0.06 + 0.5 * near)) * shade;
-      col += tint * smoothstep(-1.0, hitH, hp.y) * 0.03;
-    }
-    // fog into the distance
-    col = mix(col, bg, 1.0 - exp(-max(hitT - 5.0, 0.0) * 0.09));
-  }
-
-  col += vec3(0.35, 0.3, 0.9) * 0.08 * exp(-abs(uv.y - 0.32) * 6.0); // horizon haze
-  col = col / (1.0 + col);
-  col = pow(col, vec3(0.9));
-  col *= 1.0 - 0.3 * dot(uv * 0.7, uv * 0.7);
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
-function startScene() {
-  const canvas = $("scene");
-  const gl = canvas.getContext("webgl", { antialias: false, alpha: false, powerPreference: "high-performance" });
-  if (!gl) return;
-
-  const shader = (type, src) => {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
-    return s;
-  };
-  const prog = gl.createProgram();
-  try {
-    gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT));
-    gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG));
-  } catch (err) { console.warn(err); return; }
-  gl.linkProgram(prog);
-  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return;
-  gl.useProgram(prog);
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, "p");
-  gl.enableVertexAttribArray(loc);
-  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-
-  const u = (n) => gl.getUniformLocation(prog, n);
-  const uRes = u("uRes"), uTime = u("uTime"), uMouse = u("uMouse"), uShift = u("uShift");
-  const uLean = u("uLean"), uHover = u("uHover");
-
-  let scale = 0;              // render resolution vs. device pixels
-  let shift = [0, 0];
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    // ~1.2 MP keeps it smooth; the CSS upscale hides the rest
-    if (!scale) scale = Math.min(0.75, Math.sqrt(1.2e6 / (window.innerWidth * window.innerHeight * dpr * dpr)));
-    canvas.width = Math.round(window.innerWidth * dpr * scale);
-    canvas.height = Math.round(window.innerHeight * dpr * scale);
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    // portrait: look a bit further down so the grid sits behind the cards
-    shift = [0, window.innerWidth / window.innerHeight < 1 ? 0.12 : 0];
-  }
-  resize();
-  window.addEventListener("resize", resize);
-
-  let raf = 0, last = performance.now(), slow = 0, time = 0;
-  // smoothed state: where the lift is, how strong it is, where the camera leans
-  const hover = { x: 0, y: 0, w: 0 };
-  const lean = { x: 0, y: 0 };
-  // frame-rate independent easing: covers ~63% of the gap every 1/rate seconds
-  const ease = (from, to, rate, dt) => from + (to - from) * (1 - Math.exp(-rate * dt));
-  function frame(now) {
-    const dt = Math.min(now - last, 100);
-    last = now;
-    if (!reduceMotion.matches) time += dt / 1000;
-    const s = dt / 1000;
-    // Lift: while it's faded out, jump it to the pointer unseen, then fade
-    // in there. Only follow by easing once it's visible.
-    if (pointer.active && hover.w < 0.02) { hover.x = pointer.tx; hover.y = pointer.ty; }
-    hover.x = ease(hover.x, pointer.tx, 9, s);
-    hover.y = ease(hover.y, pointer.ty, 9, s);
-    hover.w = ease(hover.w, pointer.active ? 1 : 0, pointer.active ? 2.5 : 4, s);
-    // Camera: slow and soft. Its pull grows with the lift's fade-in, so the
-    // first pointer move turns the view gently instead of swinging it.
-    lean.x = ease(lean.x, pointer.tx * hover.w, 1.2, s);
-    lean.y = ease(lean.y, pointer.ty * hover.w, 1.2, s);
-
-    gl.uniform2f(uRes, canvas.width, canvas.height);
-    gl.uniform1f(uTime, time);
-    gl.uniform2f(uMouse, hover.x, hover.y);
-    gl.uniform2f(uLean, lean.x, lean.y);
-    gl.uniform1f(uHover, hover.w);
-    gl.uniform2f(uShift, shift[0], shift[1]);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // adaptive quality: drop resolution while frames stay slow
-    slow = dt > 28 ? slow + 1 : Math.max(0, slow - 1);
-    if (slow > 30 && scale > 0.35) { scale -= 0.1; slow = 0; resize(); }
-    raf = requestAnimationFrame(frame);
-  }
-  raf = requestAnimationFrame(frame);
-  document.addEventListener("visibilitychange", () => {
-    cancelAnimationFrame(raf);
-    if (!document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
-  });
-}
-startScene();
