@@ -207,31 +207,28 @@
         </ul>
       </nav>
 
-      <nav class="cards cards--projects" aria-labelledby="projects-label">
-        <p class="cards__label" id="projects-label"><span>Projects</span></p>
-        <ul role="list">
+      <!-- Projects: one <li> per tool. Copy a row, set href, --brand, name, description and host.
+           Numbers come from CSS; the list scrolls inside the panel once it gets long. -->
+      <nav class="projects" aria-labelledby="projects-label">
+        <p class="projects__head">
+          <span class="projects__label" id="projects-label">Projects</span>
+          <span class="projects__scope" aria-hidden="true">*.reez.cc</span>
+        </p>
+        <ul class="projects__list" role="list">
           <li>
-            <a class="card" href="https://ascii.reez.cc/" target="_blank" rel="noopener" style="--brand:#7cf7ff">
-              <span class="card__top">
-                <svg class="card__icon card__icon--line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="m7 10 3 2.5L7 15M12.5 15H17"/></svg>
-                <span class="card__tag">Tool</span>
-                <svg class="card__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-              </span>
-              <span class="card__title">ASCII</span>
-              <span class="card__detail">ascii.reez.cc</span>
-              <span class="sr-only">ASCII art tools: text to ASCII, gallery, image to ASCII (opens in new tab)</span>
+            <a class="proj" href="https://ascii.reez.cc/" target="_blank" rel="noopener" style="--brand:#7cf7ff">
+              <span class="proj__text"><span class="proj__name">ASCII</span><span class="proj__desc">Text, images and a gallery as ASCII art</span></span>
+              <span class="proj__host">ascii.reez.cc</span>
+              <svg class="proj__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              <span class="sr-only">(opens in new tab)</span>
             </a>
           </li>
           <li>
-            <a class="card" href="https://wallpapers.reez.cc/" target="_blank" rel="noopener" style="--brand:#ff7ad9">
-              <span class="card__top">
-                <svg class="card__icon card__icon--line" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 20.5h8M12 16.5v4M2.5 13l5-4.5 4 3.5 3-2.5 7 5.5"/></svg>
-                <span class="card__tag">Downloads</span>
-                <svg class="card__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
-              </span>
-              <span class="card__title">Wallpapers</span>
-              <span class="card__detail">wallpapers.reez.cc</span>
-              <span class="sr-only">Wallpaper Engine templates (opens in new tab)</span>
+            <a class="proj" href="https://wallpapers.reez.cc/" target="_blank" rel="noopener" style="--brand:#ff7ad9">
+              <span class="proj__text"><span class="proj__name">Wallpapers</span><span class="proj__desc">Wallpaper Engine templates to download</span></span>
+              <span class="proj__host">wallpapers.reez.cc</span>
+              <svg class="proj__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>
+              <span class="sr-only">(opens in new tab)</span>
             </a>
           </li>
         </ul>
